@@ -1,5 +1,5 @@
 {
-  "name": "soc-sim",
+  "name": "soc-range",
   "version": "1.0.0",
   "private": true,
   "description": "SOC analyst training simulator: a live stream of simulated logs, a small SIEM, triage, incident cases, MITRE ATT&CK and scored exercises. 100% simulated data, local only.",
@@ -8,9 +8,9 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/Khaja-syed-786/soc-sim.git"
+    "url": "git+https://github.com/Khaja-syed-786/soc-range.git"
   },
-  "homepage": "https://github.com/Khaja-syed-786/soc-sim#readme",
+  "homepage": "https://github.com/Khaja-syed-786/soc-range#readme",
   "main": "server.js",
   "engines": {
     "node": ">=22"

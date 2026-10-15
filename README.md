@@ -1,4 +1,4 @@
-# SOC Training Simulator
+# SOC Range
 
 A practice Security Operations Center that runs entirely on your PC at **http://127.0.0.1:5000**.
 It generates a live stream of security logs for a fictional company, detects attacks in that stream with a small
@@ -91,8 +91,8 @@ All screenshots show simulated data only.
 Requires **Node.js 22 or later**.
 
 ```bash
-git clone https://github.com/Khaja-syed-786/soc-sim.git
-cd soc-sim
+git clone https://github.com/Khaja-syed-786/soc-range.git
+cd soc-range
 npm install
 npm start
 ```
