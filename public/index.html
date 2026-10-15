@@ -1,0 +1,215 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SOC Simulator</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header>
+  <div class="brand"><span class="dot" id="genDot"></span> SOC SIMULATOR <span class="muted">training only &middot; simulated data</span></div>
+  <nav>
+    <a href="#dashboard" data-view="dashboard">Dashboard</a>
+    <a href="#alerts" data-view="alerts">Alert Queue <span class="badge" id="openBadge">0</span></a>
+    <a href="#cases" data-view="cases">Cases <span class="badge" id="caseBadge">0</span></a>
+    <a href="#search" data-view="search">Log Search</a>
+    <a href="#ioc" data-view="ioc">IOC Lookup</a>
+    <a href="#mitre" data-view="mitre">MITRE</a>
+    <a href="#exercise" data-view="exercise">Exercise</a>
+    <a href="#handover" data-view="handover">Handover</a>
+    <a href="#rules" data-view="rules">Rules</a>
+    <a href="#generator" data-view="generator">Generator</a>
+  </nav>
+  <div class="ex-banner" id="exBanner" hidden title="A scored exercise is running">EXERCISE <span class="mono" id="exClock"></span>
+    <button type="button" id="exBannerSubmit">Submit</button></div>
+  <div class="clock" id="clock"></div>
+</header>
+
+<main>
+  <!-- DASHBOARD -->
+  <section id="view-dashboard" class="view">
+    <div class="kpis">
+      <div class="kpi"><div class="kpi-label">Open alerts</div><div class="kpi-val" id="kOpen">-</div></div>
+      <div class="kpi"><div class="kpi-label">New (untouched)</div><div class="kpi-val" id="kNew">-</div></div>
+      <div class="kpi"><div class="kpi-label">Closed</div><div class="kpi-val" id="kClosed">-</div></div>
+      <div class="kpi"><div class="kpi-label">Open cases</div><div class="kpi-val" id="kCases">-</div></div>
+      <div class="kpi" title="Mean Time To Detect: first suspicious event to alert"><div class="kpi-label">MTTD</div><div class="kpi-val" id="kMttd">-</div></div>
+      <div class="kpi" title="Mean Time To Respond: alert created to alert closed"><div class="kpi-label">MTTR</div><div class="kpi-val" id="kMttr">-</div></div>
+      <div class="kpi"><div class="kpi-label">Events stored</div><div class="kpi-val" id="kEvents">-</div></div>
+    </div>
+    <div class="grid">
+      <div class="panel"><h3>Alerts by severity</h3><div id="chSeverity"></div></div>
+      <div class="panel"><h3>Open vs closed</h3><div id="chStatus"></div></div>
+      <div class="panel wide"><h3>Alerts over time (last 24h, per hour)</h3><div id="chTime"></div></div>
+      <div class="panel"><h3>Top hosts in alerts</h3><div id="chHosts"></div></div>
+      <div class="panel"><h3>Top users in alerts</h3><div id="chUsers"></div></div>
+    </div>
+  </section>
+
+  <!-- ALERTS -->
+  <section id="view-alerts" class="view">
+    <div class="toolbar">
+      <select id="fStatus"><option value="">All statuses</option></select>
+      <select id="fSeverity"><option value="">All severities</option></select>
+      <select id="fAssignee"><option value="">Any assignee</option></select>
+      <select id="fMitre"><option value="">Any technique</option></select>
+      <span class="muted" id="alertCount"></span>
+    </div>
+    <div class="split">
+      <div class="panel list"><table id="alertTable"><thead><tr>
+        <th>#</th><th>Sev</th><th>Title</th><th>Entity</th><th>MITRE</th><th>Status</th><th>Assignee</th><th>Created</th>
+      </tr></thead><tbody></tbody></table></div>
+      <div class="panel detail" id="alertDetail"><p class="muted">Select an alert to triage it.</p></div>
+    </div>
+  </section>
+
+  <!-- CASES -->
+  <section id="view-cases" class="view">
+    <div class="toolbar">
+      <select id="cStatusF"><option value="">All phases</option></select>
+      <button id="cNew" class="ghost">+ New empty case</button>
+      <span class="muted" id="caseCount"></span>
+    </div>
+    <div class="split">
+      <div class="panel list"><table id="caseTable"><thead><tr>
+        <th>#</th><th>Sev</th><th>Title</th><th>Phase</th><th>Owner</th><th>Alerts</th><th>Opened</th>
+      </tr></thead><tbody></tbody></table></div>
+      <div class="panel detail" id="caseDetail"><p class="muted">Select a case, or use "Escalate to case" on an alert.</p></div>
+    </div>
+  </section>
+
+  <!-- SEARCH -->
+  <section id="view-search" class="view">
+    <form class="toolbar" id="searchForm">
+      <label>From <input type="datetime-local" name="from"></label>
+      <label>To <input type="datetime-local" name="to"></label>
+      <select name="source"><option value="">Any source</option><option>winsec</option><option>firewall</option><option>dns</option><option>edr</option><option>mail</option><option>change</option></select>
+      <select name="host" id="sHost"><option value="">Any host</option></select>
+      <select name="user" id="sUser"><option value="">Any user</option></select>
+      <input name="eventId" placeholder="Event ID" size="7">
+      <input name="q" placeholder="Keyword" size="16">
+      <input type="hidden" name="ids">
+      <button type="submit">Search</button>
+      <button type="button" id="searchClear" class="ghost">Clear</button>
+    </form>
+    <div class="muted" id="searchInfo"></div>
+    <div class="panel"><table id="eventTable"><thead><tr>
+      <th>Time</th><th>Source</th><th>Event</th><th>Host</th><th>User</th><th>Src IP</th><th>Dest</th><th>Message</th>
+    </tr></thead><tbody></tbody></table></div>
+    <div class="pager"><button id="pgPrev" class="ghost">&larr; Newer</button> <span id="pgInfo"></span> <button id="pgNext" class="ghost">Older &rarr;</button></div>
+  </section>
+
+  <!-- IOC LOOKUP -->
+  <section id="view-ioc" class="view">
+    <form class="toolbar" id="iocForm">
+      <input name="value" id="iocValue" placeholder="IP address, domain or SHA-256 file hash" size="72" autocomplete="off">
+      <button type="submit">Look up</button>
+      <span class="muted">Local only: checks the fake intel list and the stored events. Nothing leaves this PC.</span>
+    </form>
+    <div class="split">
+      <div class="panel detail" id="iocResult"></div>
+      <div class="panel detail">
+        <h3>Threat intel list</h3>
+        <p class="muted">Saved to <code>rules/intel.json</code>. Rules R005/R006 use <code>badIps</code>/<code>badDomains</code> on new events.
+          Only <code>192.0.2.x</code>, <code>198.51.100.x</code>, <code>203.0.113.x</code>, <code>*.example</code> and simulated hashes (48 leading zeros) are accepted.</p>
+        <textarea id="intelText" spellcheck="false"></textarea>
+        <div class="row"><button id="intelSave">Save intel</button> <button id="intelReload" class="ghost">Discard changes</button></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- MITRE HEATMAP -->
+  <section id="view-mitre" class="view">
+    <div class="toolbar">
+      <span class="seg" id="mMode">
+        <button type="button" data-mode="coverage">Detection coverage</button><button type="button" data-mode="activity">Alert activity</button>
+      </span>
+      <select id="mHours"><option value="24">Last 24 hours</option><option value="168">Last 7 days</option><option value="0">All time</option></select>
+      <span class="muted" id="mSummary"></span>
+    </div>
+    <div class="panel mitre-wrap"><div class="mitre-grid" id="mGrid"></div></div>
+    <div class="muted mitre-legend" id="mLegend"></div>
+    <div class="panel" id="mDetail"><p class="muted">Click a technique to see its rules and alerts.</p></div>
+  </section>
+
+  <!-- EXERCISE (scenario mode with scoring) -->
+  <section id="view-exercise" class="view">
+    <div class="ex-top">
+      <div class="panel" id="exControl"></div>
+      <div class="panel">
+        <h3>Progress (last 30 scored exercises)</h3><div id="exChart"></div>
+        <h3>Average marks per criterion (weakest first)</h3><div id="exWeak"></div>
+      </div>
+    </div>
+    <div class="panel" id="exCard"><p class="muted">Your scorecard appears here after you submit.</p></div>
+    <div class="panel"><h3>History</h3><table id="exHistory"><thead><tr>
+      <th>#</th><th>Started</th><th>Scenario</th><th>Mode</th><th>Result</th><th>Score</th><th>Duration</th>
+    </tr></thead><tbody></tbody></table></div>
+  </section>
+
+  <!-- SHIFT HANDOVER -->
+  <section id="view-handover" class="view">
+    <div class="toolbar no-print">
+      <select id="hWindow"><option value="8">Last 8 hours</option><option value="12">Last 12 hours</option>
+        <option value="24">Last 24 hours</option><option value="custom">Custom window</option></select>
+      <span id="hCustom" hidden><label>From <input type="datetime-local" id="hFrom"></label> <label>To <input type="datetime-local" id="hTo"></label></span>
+      <button type="button" id="hRefresh">Refresh</button>
+      <button type="button" id="hPrint" class="ghost">Print / Save as PDF</button>
+      <span class="muted">In the print dialog, choose "Save as PDF" as the printer to get a file.</span>
+    </div>
+    <div id="hPrev" class="no-print"></div>
+    <div id="hReport"></div>
+    <div class="panel h-notes" id="hNotesPanel">
+      <h3>My handover notes</h3>
+      <div class="row no-print"><label>Analyst <select id="hAnalyst"></select></label> <span class="muted" id="hDraftMsg">The draft is saved when you click out of the box.</span></div>
+      <textarea id="hNotes" class="no-print" placeholder="What is still going on, what you already did, what the next shift should do first..."></textarea>
+      <div class="print-only h-notes-text" id="hNotesPrint"></div>
+      <div class="row no-print"><button type="button" id="hSave">Save handover</button>
+        <span class="muted">Saving keeps your notes with a frozen copy of this report, and clears the draft.</span></div>
+    </div>
+    <div class="panel no-print"><h3>Saved handovers</h3><table id="hList"><thead><tr>
+      <th>#</th><th>Saved</th><th>Analyst</th><th>Window</th><th>Notes</th>
+    </tr></thead><tbody></tbody></table></div>
+  </section>
+
+  <!-- RULES -->
+  <section id="view-rules" class="view">
+    <p class="muted">Detection rules are plain JSON (saved to <code>rules/rules.json</code>). Types: <b>match</b>, <b>threshold</b>, <b>lookup</b>. See README for fields.</p>
+    <textarea id="rulesText" spellcheck="false"></textarea>
+    <div class="toolbar"><button id="rulesSave">Save &amp; reload rules</button> <button id="rulesReload" class="ghost">Discard changes</button> <span id="rulesMsg"></span></div>
+  </section>
+
+  <!-- GENERATOR -->
+  <section id="view-generator" class="view">
+    <div class="grid">
+      <div class="panel">
+        <h3>Background noise</h3>
+        <p><label><input type="checkbox" id="gRunning"> Generator running</label></p>
+        <p><label>Rate (events/second) <input type="number" id="gRate" min="0.1" max="20" step="0.1"></label></p>
+        <p><label><input type="checkbox" id="gAuto"> Auto-inject scenarios every few minutes</label></p>
+        <button id="gApply">Apply</button> <span id="gMsg"></span>
+      </div>
+      <div class="panel">
+        <h3>Inject a scenario now</h3>
+        <div id="scenarioButtons"></div>
+        <p class="muted">"Unusual hour" scenarios arrive as late logs from last night (01:00-04:59).</p>
+        <p class="muted" id="gExNote"></p>
+      </div>
+      <div class="panel">
+        <h3>Fake threat intel</h3>
+        <div id="intelList"></div>
+        <p class="muted">Edit it on the <a href="#ioc">IOC Lookup</a> page.</p>
+      </div>
+      <div class="panel">
+        <h3>State</h3>
+        <p class="muted">Saved to: <code id="dataFile"></code> (every 30s and on shutdown)</p>
+        <button id="resetBtn" class="danger">Reset everything (new 24h history)</button>
+      </div>
+    </div>
+  </section>
+</main>
+<div id="toast"></div>
+<script src="app.js"></script>
+</body>
+</html>

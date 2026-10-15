@@ -1,0 +1,25 @@
+{
+  "name": "soc-sim",
+  "version": "1.0.0",
+  "private": true,
+  "description": "SOC analyst training simulator: a live stream of simulated logs, a small SIEM, triage, incident cases, MITRE ATT&CK and scored exercises. 100% simulated data, local only.",
+  "keywords": ["soc", "siem", "blue-team", "incident-response", "mitre-attack", "threat-detection", "security-training", "simulator"],
+  "author": "Khaja-syed-786",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Khaja-syed-786/soc-sim.git"
+  },
+  "homepage": "https://github.com/Khaja-syed-786/soc-sim#readme",
+  "main": "server.js",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "start": "node server.js",
+    "test": "node --test test/*.test.js"
+  },
+  "dependencies": {
+    "express": "^4.21.2"
+  }
+}

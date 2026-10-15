@@ -1,0 +1,17 @@
+{
+  "badIps": [
+    { "value": "203.0.113.66", "note": "Fake C2 server (training)" },
+    { "value": "203.0.113.77", "note": "Fake brute-force source (training)" },
+    { "value": "203.0.113.99", "note": "Fake data-exfil drop (training)" },
+    { "value": "203.0.113.150", "note": "Fake phishing host (training)" }
+  ],
+  "badDomains": [
+    { "value": "evil-updates.example", "note": "Fake malware update site (training)" },
+    { "value": "login-verify.example", "note": "Fake phishing domain (training)" },
+    { "value": "c2-beacon.example", "note": "Fake C2 domain (training)" }
+  ],
+  "badHashes": [
+    { "value": "000000000000000000000000000000000000000000000000fa4e000000000001", "note": "Fake credential dumping tool build A (training)" },
+    { "value": "000000000000000000000000000000000000000000000000fa4e000000000002", "note": "Fake credential dumping tool build B (training)" }
+  ]
+}

@@ -1,0 +1,22 @@
+{
+  "weights": {
+    "verdict": 25,
+    "severity": 10,
+    "escalation": 15,
+    "linked": 10,
+    "mtta": 10,
+    "mttr": 10,
+    "playbook": 10,
+    "notes": 10
+  },
+  "targetsSeconds": {
+    "critical": { "mtta": 120, "mttr": 600 },
+    "high": { "mtta": 300, "mttr": 900 },
+    "medium": { "mtta": 600, "mttr": 1200 },
+    "low": { "mtta": 900, "mttr": 1800 }
+  },
+  "noteMinChars": 20,
+  "notesForFull": 2,
+  "timeLimitsMinutes": [10, 15, 30, 60],
+  "defaultMinutes": 15
+}

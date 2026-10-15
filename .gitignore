@@ -1,0 +1,18 @@
+# Dependencies
+node_modules/
+
+# Runtime state and logs (kept outside the repo by default)
+data/
+state*.json
+*.log
+*.pid
+*.bak
+
+# Local environment and editor/agent settings
+.env
+.claude/
+CLAUDE.md
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

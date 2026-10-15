@@ -1,0 +1,119 @@
+[
+  {
+    "id": "PB-BRUTE",
+    "name": "Brute force / password guessing",
+    "ruleIds": ["R001"],
+    "steps": [
+      { "title": "Check how many logons failed and from which source IPs", "help": "Open the related events. One source IP hitting one user is classic guessing; many IPs can mean a password spray." },
+      { "title": "Check whether any logon succeeded after the failures", "help": "Search Event ID 4624 for the same user just after the failures. A success after many failures is the dangerous case." },
+      { "title": "Contact the user to confirm whether it was them", "help": "Typing a password wrong a few times after a password change is the most common benign cause." },
+      { "title": "Lock or reset the account if it was not the user", "help": "Containment: stop the attacker from using a guessed password." },
+      { "title": "Block the source IP at the firewall if it is external", "help": "Only for addresses outside the company network." },
+      { "title": "Document the findings and set a verdict", "help": "Write what you checked and why you chose the verdict." }
+    ]
+  },
+  {
+    "id": "PB-ACCOUNT",
+    "name": "New or newly privileged account",
+    "ruleIds": ["R002", "R003"],
+    "steps": [
+      { "title": "Identify who created or changed the account", "help": "The 'user' field on the 4720/4732 event is the account that made the change." },
+      { "title": "Look for a matching change ticket or request", "help": "Approved admin work should have a ticket. No ticket is a red flag." },
+      { "title": "Check what the new account has done since", "help": "Search Log Search for the new account name (target user) to see logons and actions." },
+      { "title": "Disable the account if it is not authorised", "help": "Containment: remove access before investigating further." },
+      { "title": "Review membership of admin groups", "help": "Make sure no other unexpected accounts were added at the same time." },
+      { "title": "Document the findings and set a verdict", "help": "Record the ticket number, or why the change was not approved." }
+    ]
+  },
+  {
+    "id": "PB-OFFHOURS",
+    "name": "Off-hours interactive logon",
+    "ruleIds": ["R004"],
+    "steps": [
+      { "title": "Check the user's normal working hours and role", "help": "Some staff (admins, on-call) work at night as part of the job." },
+      { "title": "Check for planned maintenance at that time", "help": "Patching windows often happen in the early morning." },
+      { "title": "Confirm with the user or their manager", "help": "Ask in a way that does not tip off an attacker using the account, e.g. by phone." },
+      { "title": "Review what happened after the logon", "help": "Look for account changes, unusual connections or EDR detections on the same host." },
+      { "title": "Reset the credentials if the logon is not confirmed", "help": "Containment for possibly stolen credentials." },
+      { "title": "Document the findings and set a verdict", "help": "Planned work with a ticket is usually 'benign'." }
+    ]
+  },
+  {
+    "id": "PB-BEACON",
+    "name": "Connection to known-bad IP or domain (beacon)",
+    "ruleIds": ["R005", "R006"],
+    "steps": [
+      { "title": "Look up the indicator in the threat-intel list", "help": "Generator tab shows the fake intel list and what each entry means." },
+      { "title": "Identify the host and process making the connection", "help": "Check firewall/DNS events and any EDR events on that host." },
+      { "title": "Check whether other hosts contacted the same indicator", "help": "Search Log Search by the IP or domain with no host filter." },
+      { "title": "Isolate the affected host from the network", "help": "Containment: stop it talking to the attacker's controller." },
+      { "title": "Block the indicator at the firewall and DNS", "help": "Prevents other hosts from reaching it." },
+      { "title": "Document the findings and set a verdict", "help": "Repeated connections at regular intervals point to beaconing." }
+    ]
+  },
+  {
+    "id": "PB-EDR",
+    "name": "Suspicious tool detected by EDR",
+    "ruleIds": ["R007"],
+    "steps": [
+      { "title": "Review the EDR detection details", "help": "Note the host, user and the generic tool description." },
+      { "title": "Check whether the tool was blocked or ran", "help": "A blocked tool is less urgent than one that ran, but still needs follow-up." },
+      { "title": "Isolate the host", "help": "Containment: a credential theft tool means passwords on that host may be exposed." },
+      { "title": "Reset credentials of accounts that used the host", "help": "Assume any password typed on the host is known to the attacker." },
+      { "title": "Escalate to an incident case", "help": "Use 'Escalate to case' so the wider investigation has one timeline." },
+      { "title": "Document the findings and set a verdict", "help": "Write down which accounts were reset." }
+    ]
+  },
+  {
+    "id": "PB-PHISH",
+    "name": "Phishing link clicked",
+    "ruleIds": ["R008"],
+    "steps": [
+      { "title": "Read the delivered email: sender, SPF result, subject and recipient count", "help": "Search Log Search with source \"mail\" and the user. A failed SPF check, an urgent password subject and only one or two recipients point to targeted phishing. A newsletter goes to many people and passes SPF." },
+      { "title": "Check what happened after the click", "help": "Look for DNS and firewall events from the user's PC to the link's domain and IP, and for a form_submit event (the user typed credentials into the page)." },
+      { "title": "Look for logons from new IPs after the click", "help": "Search the user in Log Search with event ID 4624. A successful logon from a 203.0.113.x address the user has never used before means the stolen password is being used. No rule alerts on it: you have to look." },
+      { "title": "Reset the password and end the user's sessions if credentials were entered", "help": "Containment: the attacker's copy of the password stops working." },
+      { "title": "Block the domain and purge the email from every mailbox", "help": "Other people may have received the same email. Add the domain and IP to the intel list." },
+      { "title": "Document the findings and set a verdict", "help": "A legitimate newsletter on a new domain is benign; a lookalike page asking for a password is a true positive." }
+    ]
+  },
+  {
+    "id": "PB-SPRAY",
+    "name": "Password spraying",
+    "ruleIds": ["R009"],
+    "steps": [
+      { "title": "List the accounts the source IP tried", "help": "Open the related events. Spraying is one IP, many users, one or two attempts each." },
+      { "title": "Check whether any of those accounts logged on successfully from the same IP", "help": "Search the source IP in Log Search for Event ID 4624. One success means one account is in the attacker's hands." },
+      { "title": "Reset any account that logged on from the IP", "help": "Containment: assume the guessed password is known." },
+      { "title": "Block the source IP at the firewall", "help": "It is external (203.0.113.x). Also add it to the intel list." },
+      { "title": "Check whether the tried accounts share a weak password policy", "help": "Spraying works against common passwords. This is the lesson-learned for the post-incident review." },
+      { "title": "Document the findings and set a verdict", "help": "List the accounts tried and whether any succeeded." }
+    ]
+  },
+  {
+    "id": "PB-LATERAL",
+    "name": "Lateral movement between workstations",
+    "ruleIds": ["R010"],
+    "steps": [
+      { "title": "Identify the account, the source PC and the PCs it logged on to", "help": "Open the related events. Is the source the user's own PC?" },
+      { "title": "Check the user's role", "help": "IT admins do remote work on PCs; other staff almost never log on to someone else's PC over the network." },
+      { "title": "Look for an approved change ticket in the change log", "help": "Search Log Search with source \"change\". A ticket that lists exactly these hosts and covers this time means planned work." },
+      { "title": "Isolate the source PC and reset the account if there is no ticket", "help": "Containment: stop the spread and cut off the stolen credentials." },
+      { "title": "Review what the account did on each target PC", "help": "Search each target host for EDR detections, new accounts or unusual connections." },
+      { "title": "Document the findings and set a verdict", "help": "Record the change reference if the work was planned." }
+    ]
+  },
+  {
+    "id": "PB-BEACON-PATTERN",
+    "name": "Beacon pattern to an unknown address",
+    "ruleIds": ["R011"],
+    "steps": [
+      { "title": "Confirm the pattern: same host, same IP, regular intervals", "help": "Open the related events and look at the times. Software checking in on a timer is the sign of a beacon." },
+      { "title": "Look up the IP in IOC Lookup", "help": "It may be on no intel list. That does not make it safe: the behaviour is the evidence." },
+      { "title": "Check whether other hosts talk to the same IP", "help": "Search the IP in Log Search with no host filter." },
+      { "title": "Isolate the host", "help": "Containment: stop it talking to the controller." },
+      { "title": "Add the IP to the intel list and block it", "help": "From now on the known-bad IP rule (R005) also catches it." },
+      { "title": "Document the findings and set a verdict", "help": "Note the interval and how long the beaconing went on." }
+    ]
+  }
+]

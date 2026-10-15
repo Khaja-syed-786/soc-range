@@ -1,0 +1,8 @@
+{
+  "dataDir": "",
+  "port": 5000,
+  "eventCap": 50000,
+  "saveIntervalSeconds": 30,
+  "defaultRate": 1,
+  "scenarioEveryMinutes": 4
+}
