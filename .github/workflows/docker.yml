@@ -1,0 +1,170 @@
+name: Docker
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# Read-only by default; no job here needs more
+permissions:
+  contents: read
+
+concurrency:
+  group: docker-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  hadolint:
+    name: Lint Dockerfile (hadolint)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    env:
+      HADOLINT_VERSION: 2.15.1
+      HADOLINT_SHA256: c7187db94eeeeca956519a6af171adc31453941a1e777961f6e680f697c8c507
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install hadolint (version- and checksum-pinned)
+        run: |
+          cd "$RUNNER_TEMP"
+          curl -sSfL -o hadolint \
+            "https://github.com/hadolint/hadolint/releases/download/v${HADOLINT_VERSION}/hadolint-linux-x86_64"
+          echo "${HADOLINT_SHA256}  hadolint" | sha256sum --check --strict
+          chmod +x hadolint
+      - name: hadolint (fails on any finding, including info)
+        run: '"$RUNNER_TEMP/hadolint" --failure-threshold info Dockerfile'
+
+  scan:
+    name: Build and scan image (Trivy)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    env:
+      TRIVY_VERSION: 0.75.0
+      TRIVY_SHA256: c6e65abddb348e25f10549df887045629cf28cc72453cd1c63acb717316b3f3f
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Build image
+        run: docker build -t soc-range:ci .
+      # The binary, not aquasecurity/trivy-action: same version + checksum pinning as gitleaks and hadolint
+      - name: Install Trivy (version- and checksum-pinned)
+        run: |
+          cd "$RUNNER_TEMP"
+          curl -sSfL -o trivy.tar.gz \
+            "https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz"
+          echo "${TRIVY_SHA256}  trivy.tar.gz" | sha256sum --check --strict
+          tar -xzf trivy.tar.gz trivy
+      # No --ignore-unfixed: an unfixed HIGH/CRITICAL fails the build too, so it gets looked at and either
+      # fixed by a base-image change or suppressed narrowly in .trivyignore with a reason.
+      - name: Trivy scan (fails on HIGH or CRITICAL)
+        run: >-
+          "$RUNNER_TEMP/trivy" image
+          --scanners vuln,secret
+          --severity HIGH,CRITICAL
+          --exit-code 1
+          --no-progress
+          soc-range:ci
+
+  smoke:
+    name: Smoke test (docker compose, README quickstart)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Run the README "Run with Docker" commands
+        run: |
+          awk '/<!-- docker-quickstart/{f=1;next} /<!-- \/docker-quickstart -->/{f=0} f && !/^```/' README.md \
+            > "$RUNNER_TEMP/quickstart.sh"
+          echo "Commands from README.md:"; cat "$RUNNER_TEMP/quickstart.sh"
+          grep -q 'docker compose up' "$RUNNER_TEMP/quickstart.sh"
+          bash -euxo pipefail "$RUNNER_TEMP/quickstart.sh"
+
+      - name: API and console answer correctly
+        run: |
+          set -euo pipefail
+          gen=$(curl -fsS --max-time 5 http://127.0.0.1:5000/api/generator)
+          echo "GET /api/generator -> $gen"
+          jq -e '.running == true and (.rate | type == "number") and (.autoScenarios | type == "boolean")' <<<"$gen"
+
+          total=$(curl -fsS --max-time 5 'http://127.0.0.1:5000/api/events?size=1' | jq -e '.total')
+          echo "seeded events: $total"
+          test "$total" -gt 1000
+
+          curl -fsS --max-time 5 -D "$RUNNER_TEMP/headers.txt" -o "$RUNNER_TEMP/index.html" http://127.0.0.1:5000/
+          grep -qi '^content-type: text/html' "$RUNNER_TEMP/headers.txt"
+          grep -q '<title>SOC Simulator</title>' "$RUNNER_TEMP/index.html"
+
+          code=$(curl -s -o /dev/null -w '%{http_code}' -X POST http://127.0.0.1:5000/api/generator)
+          echo "POST without X-SocSim -> $code"
+          test "$code" = 403
+
+      - name: Port is published on 127.0.0.1 only
+        run: |
+          set -euo pipefail
+          published=$(docker compose port soc-range 5000)
+          echo "docker compose port: $published"
+          test "$published" = "127.0.0.1:5000"
+
+          cid=$(docker compose ps -q soc-range)
+          docker inspect --format '{{json .HostConfig.PortBindings}}' "$cid" | tee "$RUNNER_TEMP/bindings.json"
+          jq -e '[.[][] | .HostIp] | length > 0 and all(. == "127.0.0.1")' "$RUNNER_TEMP/bindings.json"
+
+          echo "Host listeners on :5000:"; ss -Hltn 'sport = :5000' | tee "$RUNNER_TEMP/listeners.txt"
+          if awk '{print $4}' "$RUNNER_TEMP/listeners.txt" | grep -qv '^127\.0\.0\.1:5000$'; then
+            echo "::error::something listens on :5000 beyond 127.0.0.1"; exit 1
+          fi
+
+          ip=$(hostname -I | awk '{print $1}')
+          if curl -s -o /dev/null --max-time 3 "http://$ip:5000/"; then
+            echo "::error::app is reachable on the runner's network address $ip"; exit 1
+          fi
+          echo "not reachable on $ip:5000, as expected"
+
+      - name: Container is non-root, read-only and hardened
+        run: |
+          set -euo pipefail
+          cid=$(docker compose ps -q soc-range)
+          docker inspect "$cid" | jq '.[0] | {User: .Config.User, ReadonlyRootfs: .HostConfig.ReadonlyRootfs,
+            CapDrop: .HostConfig.CapDrop, SecurityOpt: .HostConfig.SecurityOpt, Health: .State.Health.Status}'
+          docker inspect "$cid" | jq -e '.[0] | .Config.User == "1000:1000"
+            and .HostConfig.ReadonlyRootfs == true
+            and .HostConfig.CapDrop == ["ALL"]
+            and any(.HostConfig.SecurityOpt[]; . == "no-new-privileges:true")
+            and .State.Health.Status == "healthy"'
+
+          uid=$(docker compose exec -T soc-range id -u)
+          echo "uid inside container: $uid"
+          test "$uid" = 1000
+
+          if docker compose exec -T soc-range touch /app/probe 2>/dev/null; then
+            echo "::error::/app is writable"; exit 1
+          fi
+          # Volumes must come up writable by the app user; the app code must stay root-owned
+          owners=$(docker compose exec -T soc-range stat -c '%u:%g %n' /data /app/rules /app/src /app)
+          echo "$owners"
+          test "$owners" = "$(printf '%s\n' '1000:1000 /data' '1000:1000 /app/rules' '0:0 /app/src' '0:0 /app')"
+          docker compose exec -T soc-range test -f /data/state.json
+          docker compose exec -T soc-range test -w /app/rules/rules.json
+          docker compose logs soc-range | grep -q 'WARNING: listening on 0.0.0.0'
+
+      - name: Container logs (on failure)
+        if: failure()
+        run: |
+          docker compose ps -a
+          docker compose logs --no-color --timestamps
+
+      - name: Tear down
+        if: always()
+        run: docker compose down -v
