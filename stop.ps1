@@ -1,7 +1,14 @@
 # Stop the SOC Simulator gracefully (state is saved on shutdown).
-$dataDir = if ($env:SOCSIM_DATA_DIR) { $env:SOCSIM_DATA_DIR } else { Join-Path $env:LOCALAPPDATA 'SocSim' }
+$root = $PSScriptRoot
+$cfg = try { Get-Content (Join-Path $root 'config.json') -Raw -ErrorAction Stop | ConvertFrom-Json } catch { $null }
+# Same order as src/config.js: SOCSIM_DATA_DIR, then config.json dataDir, then %LOCALAPPDATA%\SocSim
+$dataDir = if ($env:SOCSIM_DATA_DIR) { $env:SOCSIM_DATA_DIR }
+           elseif ($cfg -and $cfg.dataDir) { $cfg.dataDir }
+           else { Join-Path $env:LOCALAPPDATA 'SocSim' }
+if (-not [IO.Path]::IsPathRooted($dataDir)) { $dataDir = Join-Path $root $dataDir }
+$port = if ($cfg -and $cfg.port) { $cfg.port } else { 5000 }
 $pidFile = Join-Path $dataDir 'server.pid'
-$url = 'http://127.0.0.1:5000'
+$url = "http://127.0.0.1:$port"
 
 try {
     Invoke-RestMethod "$url/api/shutdown" -Method Post -Headers @{ 'X-SocSim' = '1' } -TimeoutSec 3 | Out-Null

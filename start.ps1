@@ -1,9 +1,15 @@
 # Start the SOC Simulator in the background and open the browser.
 $ErrorActionPreference = 'Stop'
 $root = $PSScriptRoot
-$dataDir = if ($env:SOCSIM_DATA_DIR) { $env:SOCSIM_DATA_DIR } else { Join-Path $env:LOCALAPPDATA 'SocSim' }
+$cfg = try { Get-Content (Join-Path $root 'config.json') -Raw -ErrorAction Stop | ConvertFrom-Json } catch { $null }
+# Same order as src/config.js: SOCSIM_DATA_DIR, then config.json dataDir, then %LOCALAPPDATA%\SocSim
+$dataDir = if ($env:SOCSIM_DATA_DIR) { $env:SOCSIM_DATA_DIR }
+           elseif ($cfg -and $cfg.dataDir) { $cfg.dataDir }
+           else { Join-Path $env:LOCALAPPDATA 'SocSim' }
+if (-not [IO.Path]::IsPathRooted($dataDir)) { $dataDir = Join-Path $root $dataDir }
+$port = if ($cfg -and $cfg.port) { $cfg.port } else { 5000 }
 $pidFile = Join-Path $dataDir 'server.pid'
-$url = 'http://127.0.0.1:5000'
+$url = "http://127.0.0.1:$port"
 New-Item -ItemType Directory -Force $dataDir | Out-Null
 
 if (Test-Path $pidFile) {
