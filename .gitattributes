@@ -1,0 +1,9 @@
+# Same line endings on every OS: LF in the repo and in checkouts, so tests and linters
+# see identical files on Linux and Windows runners (Windows runners default to autocrlf=true).
+* text=auto eol=lf
+
+# Windows-only launchers keep CRLF in the working tree (cmd.exe can misparse LF batch files)
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
+
+*.png binary

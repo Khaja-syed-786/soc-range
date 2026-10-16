@@ -196,11 +196,17 @@ const server = app.listen(config.port, config.host, () => {
   console.log(`SOC Simulator on http://${config.host}:${config.port}  (state: ${store.file}${loaded ? ', restored' : ''})`);
 });
 
-function shutdown() {
+// Stop the live loop, save state and close the listener. Exported so tests can stop the server
+// without exiting the process; shutdown() below is close() plus exit.
+function close(done) {
   engine.stop();
   clearInterval(saveTimer);
   try { store.save(); console.log('State saved'); } catch (e) { console.error('Save failed:', e.message); }
-  server.close(() => process.exit(0));
+  server.close(done);
+}
+
+function shutdown() {
+  close(() => process.exit(0));
   setTimeout(() => process.exit(0), 2000).unref();
 }
 process.on('SIGINT', shutdown);
@@ -208,3 +214,5 @@ process.on('SIGTERM', shutdown);
 process.on('SIGBREAK', shutdown);
 // Graceful stop endpoint used by stop.ps1 (localhost only, since we bind to 127.0.0.1)
 app.post('/api/shutdown', (req, res) => { res.json({ ok: true }); setImmediate(shutdown); });
+
+module.exports = { app, server, close };

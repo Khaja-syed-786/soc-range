@@ -62,7 +62,7 @@ generator.js --events--> store.js (in memory, saved to %LOCALAPPDATA%) --> detec
 - **Node.js 22+** and **Express 4** (the only runtime dependency)
 - Plain HTML, CSS and JavaScript front end: no framework, no build step, no CDN
 - JSON files for detection rules, playbooks, threat intel and scoring, editable without code changes
-- **77 automated tests** with the built-in `node:test` runner (see [Tests](#tests))
+- **96 automated tests** with the built-in `node:test` runner (see [Tests](#tests))
 
 ### Screenshots
 
@@ -99,11 +99,13 @@ Settings (port, data folder, event rate) are in `config.json`; see the [user gui
 
 ## Tests
 
-The project has **77 automated tests** using Node's built-in test runner. They need no extra packages and no
+The project has **96 automated tests** using Node's built-in test runner. They need no extra packages and no
 network access.
 
 ```bash
-npm test
+npm test                # all tests
+npm run test:coverage   # with a coverage report; fails under 90% line coverage
+npm run lint            # ESLint
 ```
 
 | File | Covers |
@@ -112,6 +114,8 @@ npm test
 | `test/mitre-ioc.test.js` | MITRE ATT&CK coverage and activity heatmap, IOC lookup, editable intel list, IOCs on cases |
 | `test/exercise-handover.test.js` | Scenario mode and scoring, answer keys, MTTA/MTTR, shift handover |
 | `test/advanced-detections.test.js` | Phishing, password spraying, lateral movement and beacon detections, and a false-positive soak test |
+| `test/engine.test.js` | The live loop: event rate, scenario drip-feed, auto-scenarios, tick hooks, start/stop |
+| `test/server.test.js` | The HTTP API, started on a random local port: CSRF header check, validation, scenario injection, IOC lookup, cases, reset |
 
 ## Documentation
 
