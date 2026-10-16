@@ -1,6 +1,10 @@
 # Dependencies
 node_modules/
 
+# Test coverage output
+lcov.info
+coverage/
+
 # Runtime state and logs (kept outside the repo by default)
 data/
 state*.json
