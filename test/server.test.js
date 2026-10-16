@@ -11,8 +11,11 @@ const config = require('../src/config');
 config.port = 0; // let the OS pick a free port so the test never clashes with a running copy
 
 let srv, base;
+const warnings = [];
 before(async () => {
-  srv = require('../server');
+  const warn = console.warn;
+  console.warn = (...args) => { warnings.push(args.join(' ')); };
+  try { srv = require('../server'); } finally { console.warn = warn; }
   if (!srv.server.listening) await new Promise(resolve => srv.server.once('listening', resolve));
   base = `http://127.0.0.1:${srv.server.address().port}`;
 });
@@ -22,8 +25,9 @@ const get = p => fetch(base + p);
 const send = (method, p, body, headers = { 'X-SocSim': '1' }) =>
   fetch(base + p, { method, headers: { 'Content-Type': 'application/json', ...headers }, body: JSON.stringify(body) });
 
-test('listens on loopback only', () => {
+test('listens on loopback only, with no startup warning', () => {
   assert.strictEqual(srv.server.address().address, '127.0.0.1');
+  assert.deepStrictEqual(warnings, []);
 });
 
 test('serves the analyst console', async () => {

@@ -192,6 +192,8 @@ const saveTimer = setInterval(() => {
   try { store.save(); } catch (e) { console.error('Save failed:', e.message); }
 }, config.saveIntervalSeconds * 1000);
 
+const hostWarning = config.hostWarning(config.host);
+if (hostWarning) console.warn(hostWarning);
 const server = app.listen(config.port, config.host, () => {
   console.log(`SOC Simulator on http://${config.host}:${config.port}  (state: ${store.file}${loaded ? ', restored' : ''})`);
 });
@@ -212,7 +214,7 @@ function shutdown() {
 process.on('SIGINT', shutdown);
 process.on('SIGTERM', shutdown);
 process.on('SIGBREAK', shutdown);
-// Graceful stop endpoint used by stop.ps1 (localhost only, since we bind to 127.0.0.1)
+// Graceful stop endpoint used by stop.ps1 (loopback only by default; see SOCSIM_HOST in src/config.js)
 app.post('/api/shutdown', (req, res) => { res.json({ ok: true }); setImmediate(shutdown); });
 
 module.exports = { app, server, close };
