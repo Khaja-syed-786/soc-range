@@ -44,9 +44,9 @@ Everything is simulated and runs on one machine with a single runtime dependency
 | R006 | DNS lookup of an intel-listed domain | lookup | T1071.004 |
 | R007 | EDR credential-dumping behaviour | match | T1003 |
 | R008 | Email link clicked to a domain under 30 days old | match | T1566 |
-| R009 | Password spraying: one source, 5+ distinct users | threshold (distinct) | T1110.003 |
-| R010 | Lateral movement: one account, 3+ workstations over the network | threshold (distinct) | T1021 |
-| R011 | Beacon: 6 regular connections to the same IP | beacon | T1071 |
+| R009 | Password spraying: one source, 5+ distinct users in 10 min | threshold (distinct) | T1110.003 |
+| R010 | Lateral movement: one account, 3+ workstations over the network in 15 min | threshold (distinct) | T1021 |
+| R011 | Beacon: 6 regular connections to the same IP in 15 min | beacon | T1071 |
 
 ### Architecture
 
