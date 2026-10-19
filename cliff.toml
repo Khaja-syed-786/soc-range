@@ -31,6 +31,8 @@ tag_pattern = "^v[0-9]+\\.[0-9]+\\.[0-9]+$"
 sort_commits = "oldest"
 # The leading HTML comments set the order of the groups; striptags removes them from the output
 commit_parsers = [
+  # Merge commits carry no change of their own (e.g. the temporary merge a pull_request run checks out)
+  { message = '^Merge ', skip = true },
   { message = '^feat', group = "<!-- 0 -->Changes" },
   { message = '^fix', group = "<!-- 1 -->Fixes" },
   { message = '^(Security|security)\b', group = "<!-- 2 -->Security" },
