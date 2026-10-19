@@ -19,6 +19,9 @@ const handover = require('./src/handover');
 
 const app = express();
 app.use(express.json({ limit: '1mb' }));
+// A request with no JSON body (none sent, or another content type) gets an empty object, as in Express 4.
+// Express 5 leaves req.body undefined, so handlers that read req.body.<field> would throw a TypeError.
+app.use((req, res, next) => { if (req.body === undefined) req.body = {}; next(); });
 app.use(express.static(path.join(__dirname, 'public')));
 // Block cross-site writes from other browser tabs: state-changing calls need a custom header
 // (browsers can't send one cross-origin without a CORS preflight, which we never approve).
