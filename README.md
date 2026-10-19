@@ -185,6 +185,9 @@ merges into `main`.
 | Docker | hadolint; image build and Trivy scan (fails on HIGH or CRITICAL); a smoke test that runs the Docker quickstart above |
 | Security | CodeQL (JavaScript and the GitHub Actions workflows, `security-extended` queries); `npm audit` of runtime dependencies (fails on high or critical); a full `npm audit` including dev dependencies, reported in the job summary but not blocking. Also runs weekly |
 
+Details, measured run times and known gaps: [docs/ci-cd.md](docs/ci-cd.md). To report a vulnerability, see
+[SECURITY.md](SECURITY.md).
+
 Dependabot opens weekly update PRs for npm packages, GitHub Actions and the Docker base image. A weekly job
 opens an issue when the pinned gitleaks, hadolint or Trivy version falls behind its latest release.
 
@@ -207,6 +210,8 @@ stays on `ubuntu-latest` because its name is part of a required check.
 | [Exercises and shift handover](docs/exercises-and-handover.md) | Scored scenario mode, answer keys, MTTA/MTTR, the handover report |
 | [Advanced detections](docs/advanced-detections.md) | Phishing, password spraying, lateral movement and beacon behaviour |
 | [Architecture](docs/architecture.md) | Data flow, project layout, saved state, development history |
+| [CI/CD pipeline](docs/ci-cd.md) | Every gate and why it exists, measured run times, suppressions, known gaps, verifying a release |
+| [Security policy](SECURITY.md) | How to report a vulnerability privately, supported versions, what's in scope |
 
 ## License
 

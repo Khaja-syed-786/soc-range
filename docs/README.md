@@ -11,3 +11,4 @@
 | [Exercises and shift handover](exercises-and-handover.md) | Scored scenario mode, answer keys, MTTA/MTTR, the handover report |
 | [Advanced detections](advanced-detections.md) | Phishing, password spraying, lateral movement and beacon behaviour |
 | [Architecture](architecture.md) | Data flow, project layout, saved state, development history |
+| [CI/CD pipeline](ci-cd.md) | Every gate and why it exists, measured run times, suppressions, known gaps, verifying a release |

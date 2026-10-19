@@ -52,7 +52,9 @@ jobs:
         with:
           persist-credentials: false
       - name: Build image
-        run: docker build -t soc-range:ci .
+        run: docker build --build-arg REVISION="$GITHUB_SHA" -t soc-range:ci .
+      - name: OCI labels are set
+        run: bash .github/scripts/check-oci-labels.sh soc-range:ci "$GITHUB_SHA"
       # The binary, not aquasecurity/trivy-action: same version + checksum pinning as gitleaks and hadolint
       - name: Install Trivy (version- and checksum-pinned)
         run: |
