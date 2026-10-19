@@ -30,6 +30,29 @@ test('listens on loopback only, with no startup warning', () => {
   assert.deepStrictEqual(warnings, []);
 });
 
+test('a request with no JSON body gets the normal validation error, not a TypeError', async () => {
+  const [alert] = await (await get('/api/alerts')).json();
+  const kase = await (await send('POST', '/api/cases', { title: 'Body test case' })).json();
+  const cases = [
+    ['POST', `/api/alerts/${alert.id}/notes`, /Note text required/],
+    ['POST', `/api/cases/${kase.id}/notes`, /Note text required/],
+    ['POST', '/api/generator/inject', /Unknown scenario/],
+    ['PUT', '/api/intel', /badIps must be a non-empty array/],
+  ];
+  const variants = [
+    ['no body', { 'X-SocSim': '1' }, undefined],
+    ['text/plain body', { 'X-SocSim': '1', 'Content-Type': 'text/plain' }, 'hello'],
+  ];
+  for (const [method, p, expected] of cases) {
+    for (const [name, headers, body] of variants) {
+      const res = await fetch(base + p, { method, headers, body });
+      const { error } = await res.json();
+      assert.strictEqual(res.status, 400, `${method} ${p} (${name})`);
+      assert.match(error, expected, `${method} ${p} (${name})`);
+    }
+  }
+});
+
 test('serves the analyst console', async () => {
   const res = await get('/');
   assert.strictEqual(res.status, 200);
