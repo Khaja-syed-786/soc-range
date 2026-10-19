@@ -127,6 +127,7 @@ jobs:
           fi
 
           ip=$(hostname -I | awk '{print $1}')
+          test -n "$ip"
           if curl -s -o /dev/null --max-time 3 "http://$ip:5000/"; then
             echo "::error::app is reachable on the runner's network address $ip"; exit 1
           fi
