@@ -32,6 +32,13 @@ COPY public ./public
 # rules/*.json are edited from the UI (rules, intel, playbooks), so the app user must be able to write them
 COPY --chown=1000:1000 rules ./rules
 
+# OCI image labels. CI passes the commit SHA as REVISION; a local `docker compose build` leaves it "unknown".
+ARG REVISION=unknown
+LABEL org.opencontainers.image.source="https://github.com/Khaja-syed-786/soc-range" \
+      org.opencontainers.image.description="SOC Range: a SOC analyst training simulator. All data is simulated." \
+      org.opencontainers.image.licenses="MIT" \
+      org.opencontainers.image.revision="${REVISION}"
+
 # Numeric UID/GID of the image's built-in `node` user, so runtimes can verify it is not root
 USER 1000:1000
 EXPOSE 5000

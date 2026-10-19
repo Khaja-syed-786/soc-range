@@ -75,7 +75,9 @@ jobs:
         with:
           persist-credentials: false
       - name: Build image (linux/amd64)
-        run: docker build --platform linux/amd64 -t soc-range:local .
+        run: docker build --platform linux/amd64 --build-arg REVISION="$GITHUB_SHA" -t soc-range:local .
+      - name: OCI labels are set
+        run: bash .github/scripts/check-oci-labels.sh soc-range:local "$GITHUB_SHA"
       - name: Install Trivy and Syft (version- and checksum-pinned)
         run: |
           set -euo pipefail
