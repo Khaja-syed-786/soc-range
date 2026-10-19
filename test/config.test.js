@@ -51,3 +51,7 @@ test('no warning for loopback, a clear warning naming the address otherwise', ()
   assert.match(w, /Unset SOCSIM_HOST/);
   assert.match(hostWarning('192.168.1.10'), /listening on 192\.168\.1\.10/);
 });
+
+test('DEMO: deliberately failing test', () => {
+  assert.strictEqual(1, 2);
+});
