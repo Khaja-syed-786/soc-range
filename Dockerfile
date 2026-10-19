@@ -33,6 +33,7 @@ COPY public ./public
 COPY --chown=1000:1000 rules ./rules
 
 # Numeric UID/GID of the image's built-in `node` user, so runtimes can verify it is not root
+RUN cd /app && ls
 USER 1000:1000
 EXPOSE 5000
 VOLUME ["/data"]
