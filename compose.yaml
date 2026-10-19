@@ -1,0 +1,24 @@
+# SOC Range in Docker. Usage: see README, "Run with Docker".
+services:
+  soc-range:
+    build: .
+    image: soc-range:local
+    ports:
+      # Host side bound to loopback: reachable from this PC only. Never change this to "5000:5000",
+      # which publishes the app (no login) on every network interface of the host.
+      - "127.0.0.1:5000:5000"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    volumes:
+      # The only writable paths. state.json (events, alerts, cases) lives in /data. rules/*.json are
+      # rewritten when rules, intel or playbooks are edited in the UI; on first start Docker copies the
+      # image's rules into the empty volume. `docker compose down -v` deletes both and starts fresh.
+      - soc-range-data:/data
+      - soc-range-rules:/app/rules
+    restart: unless-stopped
+
+volumes:
+  soc-range-data:
+  soc-range-rules:

@@ -1,0 +1,11 @@
+# Allow-list: the build context contains only what the image needs. Everything else stays out,
+# including .git, node_modules, coverage output, tests, docs and screenshots, local state files
+# (state*.json, *.bak, *.log, *.pid), .env files, editor settings and the Windows start/stop scripts.
+*
+!package.json
+!package-lock.json
+!server.js
+!config.json
+!src/
+!public/
+!rules/

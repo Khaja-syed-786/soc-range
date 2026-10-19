@@ -30,7 +30,7 @@ Everything is simulated and runs on one machine with a single runtime dependency
 | Threat intelligence | IOC lookup and pivoting over local data, an editable intel list, MITRE ATT&CK coverage and activity heatmap |
 | Analyst training | 15 scenarios (attacks plus benign and false-positive look-alikes), each with a computed answer key, and scoring on verdict, severity, escalation, MTTA/MTTR, playbook use and notes |
 | Operations | Shift-handover report with an auto-generated watch list and print-to-PDF |
-| Safe-by-design engineering | Binds to 127.0.0.1 only; documentation-range IPs and `*.example` domains only; validators refuse real-looking IPs, domains and hashes; no outbound calls; CSRF header on state changes |
+| Safe-by-design engineering | Binds to 127.0.0.1 by default (the Docker setup publishes on 127.0.0.1 only); documentation-range IPs and `*.example` domains only; validators refuse real-looking IPs, domains and hashes; no outbound calls; CSRF header on state changes |
 
 ### Detection rules
 
@@ -62,7 +62,7 @@ generator.js --events--> store.js (in memory, saved to %LOCALAPPDATA%) --> detec
 - **Node.js 22+** and **Express 4** (the only runtime dependency)
 - Plain HTML, CSS and JavaScript front end: no framework, no build step, no CDN
 - JSON files for detection rules, playbooks, threat intel and scoring, editable without code changes
-- **96 automated tests** with the built-in `node:test` runner (see [Tests](#tests))
+- **101 automated tests** with the built-in `node:test` runner (see [Tests](#tests))
 
 ### Screenshots
 
@@ -97,9 +97,36 @@ stop.cmd       (or .\stop.ps1)   - saves state and stops
 
 Settings (port, data folder, event rate) are in `config.json`; see the [user guide](docs/user-guide.md#settings-and-saved-state).
 
+### Run with Docker
+
+Requires Docker with Compose v2. From the cloned `soc-range` folder:
+
+<!-- docker-quickstart: CI runs the commands in this block (see .github/workflows/docker.yml) -->
+```bash
+docker compose up -d --build --wait
+```
+<!-- /docker-quickstart -->
+
+Then open **http://127.0.0.1:5000**. `docker compose down` stops it and keeps your data;
+`docker compose down -v` also deletes the saved state and any rules, intel or playbooks you edited.
+
+The container runs as a non-root user with a read-only filesystem, no Linux capabilities and
+`no-new-privileges`. The only writable paths are two named volumes: `/data` (saved state) and
+`/app/rules` (rules, intel and playbooks edited in the UI). Inside the container the app listens on
+`0.0.0.0` so the published port can reach it, so its log shows a `WARNING: listening on 0.0.0.0`
+line; that is expected.
+
+> [!WARNING]
+> **Keep the `127.0.0.1:` prefix when publishing the port.** `compose.yaml` publishes it as
+> `127.0.0.1:5000:5000`, so only this PC can reach the app. If you run the image yourself, use
+> `docker run -p 127.0.0.1:5000:5000 soc-range:local`. **`docker run -p 5000:5000`** (or `"5000:5000"` in
+> compose) without the prefix publishes the app on every network interface of your machine, and on Linux
+> Docker's port rules bypass host firewalls such as ufw. SOC Range has no login, so anyone on your network
+> could then read and change it.
+
 ## Tests
 
-The project has **96 automated tests** using Node's built-in test runner. They need no extra packages and no
+The project has **101 automated tests** using Node's built-in test runner. They need no extra packages and no
 network access.
 
 ```bash
@@ -115,6 +142,7 @@ npm run lint            # ESLint
 | `test/exercise-handover.test.js` | Scenario mode and scoring, answer keys, MTTA/MTTR, shift handover |
 | `test/advanced-detections.test.js` | Phishing, password spraying, lateral movement and beacon detections, and a false-positive soak test |
 | `test/engine.test.js` | The live loop: event rate, scenario drip-feed, auto-scenarios, tick hooks, start/stop |
+| `test/config.test.js` | The listen address (`SOCSIM_HOST`, default 127.0.0.1) and the non-loopback startup warning |
 | `test/server.test.js` | The HTTP API, started on a random local port: CSRF header check, validation, scenario injection, IOC lookup, cases, reset |
 
 ## Documentation
