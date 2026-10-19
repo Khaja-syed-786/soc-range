@@ -32,3 +32,5 @@ module.exports = {
   isLoopback,
   hostWarning,
 };
+
+const demoUnusedVariable = 1; // DEMO: unused on purpose
