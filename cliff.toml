@@ -1,0 +1,44 @@
+# git-cliff configuration (https://git-cliff.org). Used by .github/workflows/release.yml.
+# Commits here use plain-language prefixes ("CI:", "Docker:", "Docs:", "Bump ...") and squash-merge titles
+# ending in "(#N)", so grouping matches those prefixes; conventional-commit types (feat:, fix:, ...) are
+# grouped too, for commits that use them.
+
+[changelog]
+header = ""
+body = """
+{% if version %}\
+## {{ version }} ({{ timestamp | date(format="%Y-%m-%d") }})
+{% else %}\
+## Unreleased
+{% endif %}\
+{% for group, commits in commits | group_by(attribute="group") %}
+### {{ group | striptags | trim }}
+{% for commit in commits %}
+- {{ commit.message | split(pat="\n") | first | trim }} \
+([{{ commit.id | truncate(length=7, end="") }}](https://github.com/Khaja-syed-786/soc-range/commit/{{ commit.id }}))\
+{% endfor %}
+{% endfor %}
+"""
+footer = ""
+trim = true
+
+[git]
+conventional_commits = false
+filter_unconventional = false
+split_commits = false
+protect_breaking_commits = false
+tag_pattern = "^v[0-9]+\\.[0-9]+\\.[0-9]+$"
+sort_commits = "oldest"
+# The leading HTML comments set the order of the groups; striptags removes them from the output
+commit_parsers = [
+  { message = '^feat', group = "<!-- 0 -->Changes" },
+  { message = '^fix', group = "<!-- 1 -->Fixes" },
+  { message = '^(Security|security)\b', group = "<!-- 2 -->Security" },
+  { message = '^(Docker|docker)\b', group = "<!-- 3 -->Container" },
+  { message = '^(CI|ci|build)\b', group = "<!-- 4 -->CI/CD" },
+  # "README" anywhere in the first line counts as documentation (^ is the start of the whole message)
+  { message = '^(Docs|docs)\b|^[^\n]*\bREADME\b', group = "<!-- 5 -->Documentation" },
+  { message = '^(Bump|chore\(deps)', group = "<!-- 6 -->Dependencies" },
+  # Anything without a recognised prefix is a change to the app itself
+  { message = '.*', group = "<!-- 0 -->Changes" },
+]

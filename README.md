@@ -3,6 +3,7 @@
 [![CI](https://github.com/Khaja-syed-786/soc-range/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Khaja-syed-786/soc-range/actions/workflows/ci.yml)
 [![Docker](https://github.com/Khaja-syed-786/soc-range/actions/workflows/docker.yml/badge.svg?branch=main)](https://github.com/Khaja-syed-786/soc-range/actions/workflows/docker.yml)
 [![Security](https://github.com/Khaja-syed-786/soc-range/actions/workflows/security.yml/badge.svg?branch=main)](https://github.com/Khaja-syed-786/soc-range/actions/workflows/security.yml)
+[![Release](https://github.com/Khaja-syed-786/soc-range/actions/workflows/release.yml/badge.svg)](https://github.com/Khaja-syed-786/soc-range/actions/workflows/release.yml)
 
 A practice Security Operations Center that runs entirely on your PC at **http://127.0.0.1:5000**.
 It generates a live stream of security logs for a fictional company, detects attacks in that stream with a small
@@ -128,6 +129,30 @@ line; that is expected.
 > Docker's port rules bypass host firewalls such as ufw. SOC Range has no login, so anyone on your network
 > could then read and change it.
 
+### Verify a release
+
+Each `vX.Y.Z` release publishes the image to `ghcr.io/khaja-syed-786/soc-range`, signed with cosign keyless
+(GitHub OIDC) by this repository's release workflow, with an SPDX SBOM and a build provenance attestation
+attached to the same digest. The release notes show these exact commands with the version and digest filled
+in; the release workflow runs them against the image before it creates the release. You need
+[cosign](https://docs.sigstore.dev/cosign/system_config/installation/) and the [GitHub CLI](https://cli.github.com/).
+
+<!-- release-verify: the release notes and the publish job use the commands in this block -->
+```bash
+VERSION=v1.0.0
+DIGEST=sha256:<digest from the release notes>
+IMAGE=ghcr.io/khaja-syed-786/soc-range
+IDENTITY="https://github.com/Khaja-syed-786/soc-range/.github/workflows/release.yml@refs/tags/$VERSION"
+ISSUER=https://token.actions.githubusercontent.com
+cosign verify "$IMAGE@$DIGEST" --certificate-identity "$IDENTITY" --certificate-oidc-issuer "$ISSUER"
+cosign verify-attestation "$IMAGE@$DIGEST" --type spdxjson --certificate-identity "$IDENTITY" --certificate-oidc-issuer "$ISSUER"
+gh attestation verify "oci://$IMAGE@$DIGEST" --repo Khaja-syed-786/soc-range
+docker pull "$IMAGE@$DIGEST"
+```
+<!-- /release-verify -->
+
+Always pull by digest: a tag such as `latest` can be moved, a digest can't.
+
 ## Tests
 
 The project has **102 automated tests** using Node's built-in test runner. They need no extra packages and no
@@ -162,6 +187,10 @@ merges into `main`.
 
 Dependabot opens weekly update PRs for npm packages, GitHub Actions and the Docker base image. A weekly job
 opens an issue when the pinned gitleaks, hadolint or Trivy version falls behind its latest release.
+
+The Release workflow runs on `vX.Y.Z` tags (see [Verify a release](#verify-a-release)). It isn't a merge check;
+a manual run, or a pull request that changes the release pipeline, is a dry run that builds, scans and
+smoke-tests the image and previews the release notes without publishing anything.
 
 Jobs run on `ubuntu-24.04` rather than `ubuntu-latest`, so a runner image change can't break them without a code
 change; moving to a newer Ubuntu is a deliberate PR. The exception is the Linux entry of the test matrix, which
