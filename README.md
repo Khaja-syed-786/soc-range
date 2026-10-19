@@ -163,6 +163,10 @@ merges into `main`.
 Dependabot opens weekly update PRs for npm packages, GitHub Actions and the Docker base image. A weekly job
 opens an issue when the pinned gitleaks, hadolint or Trivy version falls behind its latest release.
 
+Jobs run on `ubuntu-24.04` rather than `ubuntu-latest`, so a runner image change can't break them without a code
+change; moving to a newer Ubuntu is a deliberate PR. The exception is the Linux entry of the test matrix, which
+stays on `ubuntu-latest` because its name is part of a required check.
+
 ## Documentation
 
 | Guide | What it covers |
