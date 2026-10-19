@@ -17,7 +17,7 @@ concurrency:
 jobs:
   hadolint:
     name: Lint Dockerfile (hadolint)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
       contents: read
@@ -40,7 +40,7 @@ jobs:
 
   scan:
     name: Build and scan image (Trivy)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
       contents: read
@@ -74,7 +74,7 @@ jobs:
 
   smoke:
     name: Smoke test (docker compose, README quickstart)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
       contents: read
