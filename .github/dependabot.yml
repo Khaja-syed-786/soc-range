@@ -44,3 +44,17 @@ updates:
     groups:
       docker-minor-and-patch:
         update-types: [minor, patch]
+
+  # .devcontainer/devcontainer.json (Codespaces). This ecosystem updates dev container Features; the config
+  # has none yet, so for now it checks the file and finds nothing to bump.
+  - package-ecosystem: devcontainers
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    cooldown:
+      default-days: 7
+    groups:
+      devcontainers-minor-and-patch:
+        update-types: [minor, patch]

@@ -4,8 +4,12 @@
 [![Docker](https://github.com/Khaja-syed-786/soc-range/actions/workflows/docker.yml/badge.svg?branch=main)](https://github.com/Khaja-syed-786/soc-range/actions/workflows/docker.yml)
 [![Security](https://github.com/Khaja-syed-786/soc-range/actions/workflows/security.yml/badge.svg?branch=main)](https://github.com/Khaja-syed-786/soc-range/actions/workflows/security.yml)
 [![Release](https://github.com/Khaja-syed-786/soc-range/actions/workflows/release.yml/badge.svg)](https://github.com/Khaja-syed-786/soc-range/actions/workflows/release.yml)
+[![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/Khaja-syed-786/soc-range)
 
 ![SOC Range console: alerts arriving, triage, scenario scoring](docs/demo.gif)
+
+**Try it in your browser:** the Codespaces button starts a private copy of SOC Range in a GitHub Codespace, with nothing
+to install. It needs a GitHub account; the app opens in a private forwarded port that only you can reach.
 
 A practice Security Operations Center that runs entirely on your PC at **http://127.0.0.1:5000**.
 It generates a live stream of security logs for a fictional company, detects attacks in that stream with a small
