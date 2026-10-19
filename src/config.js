@@ -32,3 +32,5 @@ module.exports = {
   isLoopback,
   hostWarning,
 };
+
+require('./demo-uncovered'); // DEMO
