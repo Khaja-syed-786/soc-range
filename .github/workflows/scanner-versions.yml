@@ -1,0 +1,109 @@
+name: Scanner versions
+
+# gitleaks, hadolint and Trivy run as version- and checksum-pinned binaries, which Dependabot can't see.
+# This checks the pinned versions against each project's latest GitHub release once a week and keeps a
+# single tracking issue open while any of them is behind. Updating a pin is a manual PR: new version and
+# new SHA-256 from the release's checksums.
+
+on:
+  schedule:
+    - cron: '41 5 * * 1'  # Mondays 05:41 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: scanner-versions
+  cancel-in-progress: false
+
+jobs:
+  check:
+    name: Check pinned scanner versions
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: write  # open, update or close the tracking issue
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      ISSUE_TITLE: Pinned scanner versions are behind
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Compare pinned and latest versions
+        id: compare
+        run: |
+          set -euo pipefail
+          # name | env var holding the pin | workflow file | GitHub repo
+          scanners=(
+            "gitleaks|GITLEAKS_VERSION|.github/workflows/ci.yml|gitleaks/gitleaks"
+            "hadolint|HADOLINT_VERSION|.github/workflows/docker.yml|hadolint/hadolint"
+            "Trivy|TRIVY_VERSION|.github/workflows/docker.yml|aquasecurity/trivy"
+          )
+          behind=0
+          {
+            echo "| Scanner | Pinned | Latest release | Published | Status |"
+            echo "|---|---|---|---|---|"
+          } > report.md
+          for s in "${scanners[@]}"; do
+            IFS='|' read -r name var file repo <<<"$s"
+            pinned=$(sed -nE "s/^ *${var}: *([0-9][0-9.]*) *$/\1/p" "$file")
+            if [ -z "$pinned" ]; then echo "::error::no ${var} pin found in ${file}"; exit 1; fi
+            read -r latest published < <(gh api "repos/${repo}/releases/latest" \
+              --jq '(.tag_name | ltrimstr("v")) + " " + .published_at[:10]')
+            if [ -z "${latest:-}" ]; then echo "::error::could not read the latest ${name} release"; exit 1; fi
+            if [ "$pinned" = "$latest" ]; then
+              status="up to date"
+            elif [ "$(printf '%s\n%s\n' "$pinned" "$latest" | sort -V | tail -n1)" = "$latest" ]; then
+              status="**behind**"; behind=1
+            else
+              status="pinned is newer than latest release"
+            fi
+            echo "| ${name} | ${pinned} | ${latest} | ${published} | ${status} |" >> report.md
+          done
+          cat report.md
+          cat report.md >> "$GITHUB_STEP_SUMMARY"
+          echo "behind=${behind}" >> "$GITHUB_OUTPUT"
+
+      - name: Open or update the tracking issue
+        if: steps.compare.outputs.behind == '1'
+        run: |
+          set -euo pipefail
+          {
+            echo "The weekly check found pinned scanner versions behind their latest release."
+            echo
+            cat report.md
+            echo
+            echo "Pins: GITLEAKS_* in ci.yml, HADOLINT_* and TRIVY_* in docker.yml. To update one, change"
+            echo "its \`*_VERSION\` and \`*_SHA256\` in the workflow file, taking the"
+            echo "SHA-256 from the release's published checksums, and open a PR. Prefer releases that have"
+            echo "been public for at least two weeks."
+            echo
+            run_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+            echo "_Updated by the Scanner versions workflow, run ${run_url}_"
+          } > body.md
+          number=$(gh issue list --state open --search "in:title \"${ISSUE_TITLE}\"" --json number,title \
+            --jq "map(select(.title == \"${ISSUE_TITLE}\")) | .[0].number // empty")
+          if [ -n "$number" ]; then
+            gh issue edit "$number" --body-file body.md
+            echo "Updated issue #${number}"
+          else
+            gh issue create --title "$ISSUE_TITLE" --body-file body.md
+          fi
+
+      - name: Close the tracking issue when everything is current
+        if: steps.compare.outputs.behind == '0'
+        run: |
+          set -euo pipefail
+          number=$(gh issue list --state open --search "in:title \"${ISSUE_TITLE}\"" --json number,title \
+            --jq "map(select(.title == \"${ISSUE_TITLE}\")) | .[0].number // empty")
+          if [ -n "$number" ]; then
+            gh issue close "$number" --comment "All pinned scanner versions match their latest release."
+            echo "Closed issue #${number}"
+          else
+            echo "No open tracking issue; nothing to do."
+          fi

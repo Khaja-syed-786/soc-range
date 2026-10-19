@@ -1,0 +1,46 @@
+version: 2
+
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    cooldown:
+      default-days: 7  # don't propose a release until it has been public for a week
+    groups:
+      npm-minor-and-patch:
+        update-types: [minor, patch]
+
+  # Actions are pinned by full commit SHA with a `# vX.Y.Z` comment; Dependabot updates both together
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    cooldown:
+      default-days: 7
+    groups:
+      actions-minor-and-patch:
+        update-types: [minor, patch]
+
+  # The Dockerfile's FROM lines pin node:<version>-alpine<version>@sha256:<digest>; Dependabot updates the
+  # tag and the digest together, and also proposes a new digest when the same tag is rebuilt upstream
+  # (for example, an Alpine security fix).
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    cooldown:
+      default-days: 7
+    ignore:
+      # Stay on Node 22 (the engines minimum) until a major upgrade is done on purpose
+      - dependency-name: node
+        update-types: [version-update:semver-major]
+    groups:
+      docker-minor-and-patch:
+        update-types: [minor, patch]

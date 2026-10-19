@@ -1,5 +1,9 @@
 # SOC Range
 
+[![CI](https://github.com/Khaja-syed-786/soc-range/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Khaja-syed-786/soc-range/actions/workflows/ci.yml)
+[![Docker](https://github.com/Khaja-syed-786/soc-range/actions/workflows/docker.yml/badge.svg?branch=main)](https://github.com/Khaja-syed-786/soc-range/actions/workflows/docker.yml)
+[![Security](https://github.com/Khaja-syed-786/soc-range/actions/workflows/security.yml/badge.svg?branch=main)](https://github.com/Khaja-syed-786/soc-range/actions/workflows/security.yml)
+
 A practice Security Operations Center that runs entirely on your PC at **http://127.0.0.1:5000**.
 It generates a live stream of security logs for a fictional company, detects attacks in that stream with a small
 SIEM rule engine, and gives you an analyst console to triage alerts, run incident cases and practise scored exercises.
@@ -144,6 +148,20 @@ npm run lint            # ESLint
 | `test/engine.test.js` | The live loop: event rate, scenario drip-feed, auto-scenarios, tick hooks, start/stop |
 | `test/config.test.js` | The listen address (`SOCSIM_HOST`, default 127.0.0.1) and the non-loopback startup warning |
 | `test/server.test.js` | The HTTP API, started on a random local port: CSRF header check, validation, scenario injection, IOC lookup, cases, reset |
+
+### CI checks
+
+Every pull request runs these workflows on GitHub Actions; the CI and Docker checks must pass before anything
+merges into `main`.
+
+| Workflow | Checks |
+|---|---|
+| CI | ESLint and yamllint; the tests on Ubuntu and Windows with a 90% line-coverage gate; gitleaks over the full git history |
+| Docker | hadolint; image build and Trivy scan (fails on HIGH or CRITICAL); a smoke test that runs the Docker quickstart above |
+| Security | CodeQL (JavaScript and the GitHub Actions workflows, `security-extended` queries); `npm audit` of runtime dependencies (fails on high or critical); a full `npm audit` including dev dependencies, reported in the job summary but not blocking. Also runs weekly |
+
+Dependabot opens weekly update PRs for npm packages, GitHub Actions and the Docker base image. A weekly job
+opens an issue when the pinned gitleaks, hadolint or Trivy version falls behind its latest release.
 
 ## Documentation
 

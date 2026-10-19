@@ -1,16 +1,16 @@
 # SOC Range container image. Build: docker compose build (see README, "Run with Docker").
 # Base: node:22.23.3-alpine3.24, pinned by digest (multi-arch index, checked against Docker Hub 2026-10-16).
-ARG NODE_IMAGE=node:22.23.3-alpine3.24@sha256:0a7108bf6c7bf5de370ffb1a3ed6be93d405b43ff159f681a8d18c0e2bc2e402
+# Written out in both FROM lines (not via ARG) so Dependabot can see and update the tag and digest together.
 
 # ---- deps: production dependencies only, from the lockfile ----
-FROM ${NODE_IMAGE} AS deps
+FROM node:22.23.3-alpine3.24@sha256:0a7108bf6c7bf5de370ffb1a3ed6be93d405b43ff159f681a8d18c0e2bc2e402 AS deps
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev --ignore-scripts --no-audit --no-fund \
  && npm cache clean --force
 
 # ---- runtime ----
-FROM ${NODE_IMAGE}
+FROM node:22.23.3-alpine3.24@sha256:0a7108bf6c7bf5de370ffb1a3ed6be93d405b43ff159f681a8d18c0e2bc2e402
 ENV NODE_ENV=production \
     # Listen on the container's own interface so a published port can reach the app. This is the only
     # place SOCSIM_HOST is set; compose.yaml publishes the port on the host's 127.0.0.1 only.
