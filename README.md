@@ -63,10 +63,10 @@ generator.js --events--> store.js (in memory, saved to %LOCALAPPDATA%) --> detec
 
 ### Tech stack
 
-- **Node.js 22+** and **Express 4** (the only runtime dependency)
+- **Node.js 22+** and **Express 5** (the only runtime dependency)
 - Plain HTML, CSS and JavaScript front end: no framework, no build step, no CDN
 - JSON files for detection rules, playbooks, threat intel and scoring, editable without code changes
-- **101 automated tests** with the built-in `node:test` runner (see [Tests](#tests))
+- **102 automated tests** with the built-in `node:test` runner (see [Tests](#tests))
 
 ### Screenshots
 
@@ -130,7 +130,7 @@ line; that is expected.
 
 ## Tests
 
-The project has **101 automated tests** using Node's built-in test runner. They need no extra packages and no
+The project has **102 automated tests** using Node's built-in test runner. They need no extra packages and no
 network access.
 
 ```bash

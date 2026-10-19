@@ -14,7 +14,8 @@ generator.js --events--> store.js (in memory, saved to %LOCALAPPDATA%) --> detec
 ## Project layout
 
 ```
-server.js            Express API + static UI (binds to 127.0.0.1 only)
+server.js            Express API + static UI (127.0.0.1 by default; the Docker image sets SOCSIM_HOST=0.0.0.0
+                     and compose.yaml publishes the port on 127.0.0.1 only)
 config.json          settings (data dir, port, cap, rate)
 rules/rules.json     detection rules
 src/company.js       fake users/hosts
@@ -32,7 +33,7 @@ src/exercise.js      scored scenario mode
 src/handover.js      shift handover report
 rules/*.json         rules, playbooks, threat intel, scoring weights
 public/              UI (vanilla JS, no CDN)
-test/                node:test tests (77)
+test/                node:test tests (102)
 ```
 
 ## Saved state
