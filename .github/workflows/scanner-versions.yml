@@ -1,8 +1,9 @@
 name: Scanner versions
 
-# gitleaks, hadolint and Trivy run as version- and checksum-pinned binaries, which Dependabot can't see.
-# This checks the pinned versions against each project's latest GitHub release once a week and keeps a
-# single tracking issue open while any of them is behind. Updating a pin is a manual PR: new version and
+# gitleaks, hadolint, Trivy, Syft, cosign and git-cliff run as version- and checksum-pinned binaries, which
+# Dependabot can't see. This checks every pin (in ci.yml, docker.yml and release.yml) against each project's
+# latest GitHub release once a week, flags a tool pinned differently in two workflows, and keeps a
+# single tracking issue open while any pin is behind or drifting. Updating a pin is a manual PR: new version and
 # new SHA-256 from the release's checksums.
 
 on:
@@ -38,50 +39,23 @@ jobs:
         id: compare
         run: |
           set -euo pipefail
-          # name | env var holding the pin | workflow file | GitHub repo
-          scanners=(
-            "gitleaks|GITLEAKS_VERSION|.github/workflows/ci.yml|gitleaks/gitleaks"
-            "hadolint|HADOLINT_VERSION|.github/workflows/docker.yml|hadolint/hadolint"
-            "Trivy|TRIVY_VERSION|.github/workflows/docker.yml|aquasecurity/trivy"
-          )
-          behind=0
-          {
-            echo "| Scanner | Pinned | Latest release | Published | Status |"
-            echo "|---|---|---|---|---|"
-          } > report.md
-          for s in "${scanners[@]}"; do
-            IFS='|' read -r name var file repo <<<"$s"
-            pinned=$(sed -nE "s/^ *${var}: *([0-9][0-9.]*) *$/\1/p" "$file")
-            if [ -z "$pinned" ]; then echo "::error::no ${var} pin found in ${file}"; exit 1; fi
-            read -r latest published < <(gh api "repos/${repo}/releases/latest" \
-              --jq '(.tag_name | ltrimstr("v")) + " " + .published_at[:10]')
-            if [ -z "${latest:-}" ]; then echo "::error::could not read the latest ${name} release"; exit 1; fi
-            if [ "$pinned" = "$latest" ]; then
-              status="up to date"
-            elif [ "$(printf '%s\n%s\n' "$pinned" "$latest" | sort -V | tail -n1)" = "$latest" ]; then
-              status="**behind**"; behind=1
-            else
-              status="pinned is newer than latest release"
-            fi
-            echo "| ${name} | ${pinned} | ${latest} | ${published} | ${status} |" >> report.md
-          done
-          cat report.md
+          bash .github/scripts/scanner-versions.sh
           cat report.md >> "$GITHUB_STEP_SUMMARY"
-          echo "behind=${behind}" >> "$GITHUB_OUTPUT"
 
       - name: Open or update the tracking issue
         if: steps.compare.outputs.behind == '1'
         run: |
           set -euo pipefail
           {
-            echo "The weekly check found pinned scanner versions behind their latest release."
+            echo "The weekly check found pinned tool versions behind their latest release, or pinned differently"
+            echo "in two workflows."
             echo
             cat report.md
             echo
-            echo "Pins: GITLEAKS_* in ci.yml, HADOLINT_* and TRIVY_* in docker.yml. To update one, change"
-            echo "its \`*_VERSION\` and \`*_SHA256\` in the workflow file, taking the"
-            echo "SHA-256 from the release's published checksums, and open a PR. Prefer releases that have"
-            echo "been public for at least two weeks."
+            echo "Pins: GITLEAKS_* in ci.yml; HADOLINT_* and TRIVY_* in docker.yml; TRIVY_*, SYFT_*, GIT_CLIFF_*"
+            echo "and COSIGN_* in release.yml. To update one, change its \`*_VERSION\` and \`*_SHA256\`, taking the"
+            echo "SHA-256 from the release's published checksums, in every workflow that pins that tool, and open"
+            echo "a PR. Prefer releases that have been public for at least two weeks."
             echo
             run_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
             echo "_Updated by the Scanner versions workflow, run ${run_url}_"

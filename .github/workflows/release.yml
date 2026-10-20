@@ -65,6 +65,8 @@ jobs:
     timeout-minutes: 20
     permissions:
       contents: read
+    outputs:
+      image-id: ${{ steps.save.outputs.image-id }}
     env:
       TRIVY_VERSION: 0.75.0
       TRIVY_SHA256: c6e65abddb348e25f10549df887045629cf28cc72453cd1c63acb717316b3f3f
@@ -122,7 +124,11 @@ jobs:
           jq -e '.spdxVersion and (.packages | length > 0)' sbom.spdx.json > /dev/null
           jq -r '"SBOM: \(.spdxVersion), \(.packages | length) packages"' sbom.spdx.json | tee -a "$GITHUB_STEP_SUMMARY"
       - name: Save the image for the publish job
-        run: docker save soc-range:local -o image.tar
+        id: save
+        run: |
+          set -euo pipefail
+          docker save soc-range:local -o image.tar
+          echo "image-id=$(docker image inspect soc-range:local --format '{{.Id}}')" >> "$GITHUB_OUTPUT"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         with:
           name: release-image
@@ -188,9 +194,49 @@ jobs:
           if-no-files-found: error
           retention-days: 3
 
+  artifacts:
+    name: Check release artifacts
+    needs: [build, changelog]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    # Runs on every run, dry runs included: it downloads the artifacts with the same pinned download-artifact
+    # action as publish and release, so a broken version of that action fails here, before a tag is pushed.
+    # It only reads; nothing is pushed, signed or released.
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
+        with:
+          name: release-image
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
+        with:
+          name: release-sbom
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
+        with:
+          name: changelog
+      - name: Image, SBOM and changelog are intact
+        env:
+          BUILT_ID: ${{ needs.build.outputs.image-id }}
+        run: |
+          set -euo pipefail
+          docker load -i image.tar
+          loaded=$(docker image inspect soc-range:local --format '{{.Id}}')
+          echo "built image:  $BUILT_ID"
+          echo "loaded image: $loaded"
+          if [ -z "$BUILT_ID" ] || [ "$loaded" != "$BUILT_ID" ]; then
+            echo "::error::downloaded image does not match the image the build job produced"; exit 1
+          fi
+          jq -e '.spdxVersion and (.packages | length > 0)' sbom.spdx.json > /dev/null
+          test -s changelog.md
+          {
+            echo "Downloaded and checked: image \`$loaded\`,"
+            echo "SBOM $(jq -r '.spdxVersion' sbom.spdx.json) ($(jq '.packages | length' sbom.spdx.json) packages),"
+            echo "changelog ($(wc -l < changelog.md) lines). Nothing was pushed, signed or released by this job."
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+
   publish:
     name: Publish to GHCR, sign and attest
-    needs: [verify, build]
+    needs: [verify, build, artifacts]
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-24.04
     timeout-minutes: 15
