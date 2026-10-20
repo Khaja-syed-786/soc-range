@@ -1,4 +1,4 @@
-# SOC Range
+# SOC Simulator
 
 [![CI](https://github.com/Khaja-syed-786/soc-range/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Khaja-syed-786/soc-range/actions/workflows/ci.yml)
 [![Docker](https://github.com/Khaja-syed-786/soc-range/actions/workflows/docker.yml/badge.svg?branch=main)](https://github.com/Khaja-syed-786/soc-range/actions/workflows/docker.yml)
@@ -6,9 +6,9 @@
 [![Release](https://github.com/Khaja-syed-786/soc-range/actions/workflows/release.yml/badge.svg)](https://github.com/Khaja-syed-786/soc-range/actions/workflows/release.yml)
 [![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/Khaja-syed-786/soc-range)
 
-![SOC Range console: alerts arriving, triage, scenario scoring](docs/demo.gif)
+![SOC Simulator console: alerts arriving, triage, scenario scoring](docs/demo.gif)
 
-**Try it in your browser:** the Codespaces button starts a private copy of SOC Range in a GitHub Codespace, with nothing
+**Try it in your browser:** the Codespaces button starts a private copy of SOC Simulator in a GitHub Codespace, with nothing
 to install. It needs a GitHub account; the app opens in a private forwarded port that only you can reach.
 
 A practice Security Operations Center that runs entirely on your PC at **http://127.0.0.1:5000**.
@@ -132,7 +132,7 @@ line; that is expected.
 > `127.0.0.1:5000:5000`, so only this PC can reach the app. If you run the image yourself, use
 > `docker run -p 127.0.0.1:5000:5000 soc-range:local`. **`docker run -p 5000:5000`** (or `"5000:5000"` in
 > compose) without the prefix publishes the app on every network interface of your machine, and on Linux
-> Docker's port rules bypass host firewalls such as ufw. SOC Range has no login, so anyone on your network
+> Docker's port rules bypass host firewalls such as ufw. SOC Simulator has no login, so anyone on your network
 > could then read and change it.
 
 ### Verify a release
