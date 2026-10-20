@@ -49,7 +49,8 @@ flowchart LR
 ```
 
 A manual run of the Release workflow, or a pull request that changes the release pipeline, is a **dry run**: it
-runs the gate, build, Trivy, smoke test, SBOM and changelog, then stops. The publish and release jobs only run for
+runs the gate, build, Trivy, smoke test, SBOM and changelog, and downloads those artifacts again with the same pinned
+action the publish and release jobs use, then stops. The publish and release jobs only run for
 a pushed `vX.Y.Z` tag, so a dry run never gets their write permissions.
 
 ## Why each gate exists
@@ -127,8 +128,9 @@ pull request until the ruleset changed too. That job only needs Node, so it's th
   as an Alpine package, so Trivy sees the Alpine packages and the npm packages but not Node itself. A CVE in Node
   wouldn't fail the Trivy gate. What moves Node forward is Dependabot's weekly Docker update of the digest-pinned
   base image (major versions are ignored on purpose).
-- **The scanner version check covers gitleaks, hadolint and Trivy only.** Syft, cosign and git-cliff are pinned the
-  same way in `release.yml` but aren't checked for new releases yet.
+- **Pinned tool binaries are checked weekly, not updated automatically.** `scanner-versions.yml` compares every
+  version- and checksum-pinned tool (gitleaks, hadolint, Trivy, Syft, cosign, git-cliff) with its latest release and
+  flags a tool pinned differently in two workflows, but bumping a pin is still a manual pull request.
 - **A tag can still be moved forward.** The tag ruleset blocks deleting and force-moving `v*` tags, but moving a
   tag to a newer commit is a fast-forward and isn't blocked (that would need an update restriction).
 - **Images are built for `linux/amd64` only**, and the release pipeline has only been run on GitHub's x86_64
