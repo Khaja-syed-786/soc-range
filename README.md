@@ -41,7 +41,7 @@ Everything is simulated and runs on one machine with a single runtime dependency
 | SOC triage | Alert queue with assignee, status, verdict (TP / FP / benign), analyst-adjustable severity and alert de-duplication |
 | Incident response | Cases that follow the NIST SP 800-61 lifecycle, a merged timeline, IOCs on cases and per-rule playbooks |
 | Threat intelligence | IOC lookup and pivoting over local data, an editable intel list, MITRE ATT&CK coverage and activity heatmap |
-| Analyst training | 16 scenarios (attacks plus benign and false-positive look-alikes), each with a computed answer key, and scoring on verdict, severity, escalation, MTTA/MTTR, playbook use and notes |
+| Analyst training | 17 scenarios (attacks plus benign and false-positive look-alikes), each with a computed answer key, and scoring on verdict, severity, escalation, MTTA/MTTR, playbook use and notes |
 | Operations | Shift-handover report with an auto-generated watch list and print-to-PDF |
 | Safe-by-design engineering | Binds to 127.0.0.1 by default (the Docker setup publishes on 127.0.0.1 only); documentation-range IPs and `*.example` domains only; validators refuse real-looking IPs, domains and hashes; no outbound calls; CSRF header on state changes |
 
@@ -76,7 +76,7 @@ generator.js --events--> store.js (in memory, saved to %LOCALAPPDATA%) --> detec
 - **Node.js 22+** and **Express 5** (the only runtime dependency)
 - Plain HTML, CSS and JavaScript front end: no framework, no build step, no CDN
 - JSON files for detection rules, playbooks, threat intel and scoring, editable without code changes
-- **108 automated tests** with the built-in `node:test` runner (see [Tests](#tests))
+- **110 automated tests** with the built-in `node:test` runner (see [Tests](#tests))
 
 ### Screenshots
 
@@ -164,7 +164,7 @@ Always pull by digest: a tag such as `latest` can be moved, a digest can't.
 
 ## Tests
 
-The project has **108 automated tests** using Node's built-in test runner. They need no extra packages and no
+The project has **110 automated tests** using Node's built-in test runner. They need no extra packages and no
 network access.
 
 ```bash

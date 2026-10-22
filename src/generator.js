@@ -287,6 +287,21 @@ const scenarios = {
         tags: ['scenario:new_starter_account'] }) }];
     },
   },
+  approved_admin_add: {
+    name: 'IT admin adds an existing user to Administrators under an approved change (benign)',
+    expected: 'benign',
+    answer: evs => ({ verdict: 'benign', severities: 'not_raised', case: 'never', rules: ['R003'],
+      explain: `${evs[0].user} (IT) added the existing employee ${evs[0].targetUser} to Administrators under approved change ${evs[0].changeRef}: planned admin work. The rule is right to ask, and the change ticket answers it.`,
+      clues: [`The event carries an approved change reference (${evs[0].changeRef})`, 'The actor is an IT admin, working from their own PC',
+        `${evs[0].targetUser} is an existing employee, not a brand-new account: no 4720 came first (compare with the new-admin attack)`] }),
+    build() {
+      const actor = pick(C.users.filter(u => u.isAdmin));
+      const target = pick(uniqueUsers.filter(u => !u.isAdmin));
+      return [{ offsetMs: 0, event: win(0, 4732, { host: 'DC01', user: actor.name, targetUser: target.name, group: 'Administrators',
+        srcIp: C.hostByName[actor.pc].ip, action: 'success', changeRef: `CHG-${rint(20000, 29999)}`,
+        tags: ['scenario:approved_admin_add'] }) }];
+    },
+  },
   backup_agent_edr: {
     name: 'EDR flags the backup agent reading protected memory (false positive)',
     expected: 'false_positive',
