@@ -383,7 +383,7 @@ test('handover report: window, severity counts, cases, IOCs, MTTA/MTTR and watch
   assert.ok(has(/waiting more than 4 h/), 'aging alerts');
   assert.ok(has(new RegExp(`Case #${c.id} .* has no owner`)));
   assert.ok(has(new RegExp(`Host ${beacon[0].host} appears in \\d+ alerts`)));
-  assert.ok(has(new RegExp(`${ip.replace(/\./g, '\\.')} is on the intel list .* not recorded on any case`)));
+  assert.ok(has(new RegExp(`${ip.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} is on the intel list .* not recorded on any case`)));
   assert.ok(has(new RegExp(`#${r6.id} .* closed as a true positive without a case`)));
   assert.ok(has(/Rule R001 produced 3 false positives/));
 
