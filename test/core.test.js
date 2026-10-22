@@ -161,6 +161,6 @@ test('a v1 state file loads, gets cases, and old alerts get playbooks', () => {
   assert.strictEqual(store.state.version, store.VERSION); // v1 -> current
   assert.deepStrictEqual(store.state.cases, []);
   assert.strictEqual(store.state.nextCaseId, 1);
-  assert.strictEqual(playbooks.attachMissing(), 1);
+  assert.strictEqual(playbooks.attachMissing(), v1.alerts.length); // R001, plus R012 when a logon succeeded
   assert.strictEqual(store.state.alerts[0].playbook.id, 'PB-BRUTE');
 });
