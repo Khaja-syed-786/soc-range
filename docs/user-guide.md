@@ -45,6 +45,7 @@ Other settings in `config.json`: `eventCap` (default 50,000, about one day at th
 | Admin late-night patching | Same alert, but the user is an IT admin | Benign |
 | Beacon to known-bad IP | DNS lookup of a bad domain, then repeated connections every minute | True positive |
 | Credential dumping tool | EDR detection on a host. Check who was logged on there | True positive |
+| Logon from the internet | One successful 4624 on a server from a `203.0.113.x` IP (R012). No failures first: the attacker already had the password | True positive |
 
 Tip: for any alert, open its events in Log Search, then clear the `ids` filter and search the same **host**
 or **user** to see what happened before and after.

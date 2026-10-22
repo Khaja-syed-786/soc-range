@@ -18,6 +18,7 @@ const cases = require('../src/cases');
 const EXPECTED_RULE = {
   brute_force: 'R001', new_admin: 'R003', off_hours_login: 'R004', admin_patching: 'R004',
   c2_beacon: 'R005', cred_dump: 'R007', new_starter_account: 'R002', backup_agent_edr: 'R007',
+  external_logon: 'R012',
 };
 
 beforeEach(() => { store.reset(); detection.loadRules(); playbooks.load(); });

@@ -2,7 +2,7 @@
 
 [← Back to README](../README.md) · [All guides](README.md)
 
-Four rules (R008–R011), two log sources (`mail` and `change`), six practice scenarios and four playbooks that go
+Five rules (R008–R012), two log sources (`mail` and `change`), seven practice scenarios and five playbooks that go
 beyond the basics, plus a scoring rule: in an exercise, **doing nothing earns no Severity or Escalation marks**.
 
 Files: `src/detection.js` (rule features), `src/generator.js` (noise and scenarios), `rules/rules.json`,
@@ -56,6 +56,14 @@ After getting into one PC, attackers **move sideways** to others, looking for ad
 **Remote Services** means using normal remote logons to do it. Ordinary staff almost never log on over the network
 (logon type 3) to other people's workstations. IT admins do, as part of planned work, and that is what the change log is for.
 
+### Logon from the internet (R012, T1078)
+**Valid Accounts** means using a real username and password instead of breaking in. A successful logon (4624) whose
+source is in `203.0.113.x`, the simulated internet, is someone outside the company using an account that works. R001
+and R009 catch the failed guesses; R012 catches the one that **succeeded**, so it also fires in the "a logon succeeded"
+variants of the brute-force, password-spray and phishing scenarios. It is a plain `match` rule grouped by user, so a
+second logon by the same user within 30 minutes joins the same alert while it is still open. Company addresses are `192.0.2.x`, so the rule
+stays quiet on normal traffic.
+
 ### Beacon behaviour (R011, T1071)
 R005 catches C2 traffic only if the IP is already **on the intel list**. R011 catches the **behaviour**: software checking in on a
 timer. That works for a brand-new controller nobody has reported yet. Detecting by behaviour instead of by indicator is
@@ -73,16 +81,17 @@ All use the same `answer(events)` format as the other scenarios ([answer keys](e
 | Scenario | What to look for | Verdict | Severity | Case |
 |---|---|---|---|---|
 | Phishing email, no password entered | SPF fail, urgent password subject, 1–3 recipients, days-old domain, link to an unlisted 203.0.113.x | True positive | high | optional |
-| Phishing email, password entered | As above plus a `form_submit`, then **a 4624 logon for the same user from a new 203.0.113.x IP 3–5 minutes later**. That logon raises **no alert**: you have to find it by searching the user in Log Search | True positive | critical | required |
+| Phishing email, password entered | As above plus a `form_submit`, then **a 4624 logon for the same user from a new 203.0.113.x IP 3–5 minutes later**. R012 alerts on that logon, but nothing in the alert ties it to the click: you have to make that link by searching the user in Log Search | True positive | critical | required |
 | Newsletter link on a new domain | SPF pass, 25+ recipients, unsubscribe link, link to normal internet, nothing afterwards | Benign | not raised | no |
 | Password spray, nothing succeeded | One external IP, 8–15 users, one failure each, R001 silent | True positive | high | optional |
 | Password spray, one account guessed | As above, plus a 4624 success from the same IP | True positive | critical | required |
 | Stolen account hops across PCs | Non-IT user, type-3 logons to 4 workstations from a PC that is not theirs, no change ticket | True positive | high or critical | required |
 | IT admin maintenance under a change ticket | IT admin, from their own PC, to exactly the hosts listed in a `CHG-` ticket approved 20 minutes earlier | Benign | not raised | no |
+| Successful logon from the internet | One 4624 on a server (Remote Desktop or network logon) from an unlisted 203.0.113.x IP, no failures first, R001 and R009 silent | True positive | high or critical | required |
 | Beacon to an unlisted IP | One PC to one 203.0.113.x every ~60 s, on no intel list, no DNS lookup first, R005 silent | True positive | high or critical | required |
 
 The lesson running through all of these: **"not on the intel list" is not the same as "safe"**, and **the alert is
-where the investigation starts, not where it ends**. The most important event in the phishing scenario has no alert.
+where the investigation starts, not where it ends**. In the phishing scenario the R012 alert does not say the logon followed the click: you have to connect them.
 
 ## Scoring: no marks for doing nothing
 

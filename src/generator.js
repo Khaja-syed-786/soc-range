@@ -146,7 +146,7 @@ const scenarios = {
       const success = evs.some(e => e.eventId === 4624);
       const ip = evs[0].srcIp;
       return success
-        ? { verdict: 'true_positive', severities: ['critical'], case: 'required', rules: ['R001'],
+        ? { verdict: 'true_positive', severities: ['critical'], case: 'required', rules: ['R001', 'R012'],
           explain: `Many failed logons from ${ip}, in the range used by suspicious actors, then a successful logon from the same address: the attacker guessed the password and got in.`,
           clues: [`The source ${ip} is external (203.0.113.x), not the user's own PC`, 'A 4624 success followed the burst of 4625 failures', 'A logon that succeeded means an account takeover: raise to critical and open a case'] }
         : { verdict: 'true_positive', severities: ['high'], case: 'optional', rules: ['R001'],
@@ -314,10 +314,10 @@ const scenarios = {
         `Urgent password subject sent to only ${mail.recipients} recipient(s): targeted, not a newsletter`,
         'The link went to a 203.0.113.x address that is not on the intel list: not on the list does not mean safe'];
       return submit
-        ? { verdict: 'true_positive', severities: ['critical'], case: 'required', rules: ['R008'],
+        ? { verdict: 'true_positive', severities: ['critical'], case: 'required', rules: ['R008', 'R012'],
           explain: `${click.user} clicked a phishing link and typed their password into the fake page on ${click.urlDomain}. ${minsBetween(submit, logon)} minutes later someone logged on as ${click.user} from ${logon.srcIp}, an address never seen before: the account is taken over.`,
           clues: [...base, `A form_submit event shows the password was entered on the fake page`,
-            `Search Log Search for the user: a 4624 logon to ${logon.host} from new IP ${logon.srcIp} came after the click. It raised no alert of its own; you had to find it`,
+            `Search Log Search for the user: a 4624 logon to ${logon.host} from new IP ${logon.srcIp} came after the click. R012 flags it, but only Log Search shows it followed the click`,
             'Stolen password used from a new IP: raise to critical, reset the password and open a case'] }
         : { verdict: 'true_positive', severities: ['high'], case: 'optional', rules: ['R008'],
           explain: `${click.user} clicked a link in a phishing email to ${click.urlDomain}, a days-old lookalike site. No credentials were submitted and no logon from a new IP followed, so the attack did not succeed yet.`,
@@ -348,7 +348,7 @@ const scenarios = {
         const submitAt = clickAt + rint(20, 60) * 1000;
         out.push({ offsetMs: submitAt, event: { ts: 0, source: 'mail', host: pc.name, user: u.name, srcIp: pc.ip, action: 'form_submit',
           urlDomain: domain, message: `Credentials form submitted on ${domain}`, tags: [t] } });
-        // The attacker uses the password from a new address. No rule fires on this: the analyst has to find it.
+        // The attacker uses the password from a new address. R012 alerts on it; linking it to the click is the analyst's job.
         out.push({ offsetMs: submitAt + rint(180, 300) * 1000, event: win(0, 4624, { host: 'MAIL01', user: u.name,
           srcIp: unlistedIp(151, 199, [ip]), logonType: 3, action: 'success', tags: [t] }) });
       }
@@ -393,7 +393,7 @@ const scenarios = {
       const base = [`One source (${ip}) failed against ${tried} different users, about once each`,
         'Each user has only one failure, so the brute-force rule (5 per user) never fires: that is the point of spraying'];
       return ok
-        ? { verdict: 'true_positive', severities: ['critical'], case: 'required', rules: ['R009'],
+        ? { verdict: 'true_positive', severities: ['critical'], case: 'required', rules: ['R009', 'R012'],
           explain: `${ip} tried one password against ${tried} accounts on ${evs[0].host} and it worked for ${ok.user}: an account was taken over.`,
           clues: [...base, `A 4624 success for ${ok.user} from the same IP: reset that password, raise to critical and open a case`] }
         : { verdict: 'true_positive', severities: ['high'], case: 'optional', rules: ['R009'],
@@ -455,6 +455,27 @@ const scenarios = {
         ...targets.map((h, i) => ({ offsetMs: i * rint(90, 180) * 1000, event: win(0, 4624, { host: h.name, user: admin.name,
           srcIp: pc.ip, logonType: 3, action: 'success', tags: [t] }) })),
       ];
+    },
+  },
+  external_logon: {
+    name: 'Successful logon from an internet address',
+    expected: 'true_positive',
+    answer(evs) {
+      const e = evs[0];
+      const how = e.logonType === 10 ? 'Remote Desktop (logon type 10)' : 'over the network (logon type 3)';
+      return { verdict: 'true_positive', severities: ['high', 'critical'], case: 'required', rules: ['R012'],
+        explain: `${e.user} logged on to ${e.host} ${how} from ${e.srcIp}, an internet address and not a company one. The password was accepted, so someone outside the company is using this account.`,
+        clues: [`The source ${e.srcIp} is in 203.0.113.x, the internet range; company addresses are 192.0.2.x`,
+          'A 4624 is a successful logon: the credentials were accepted',
+          `${e.user} normally works from ${C.users.find(u => u.name === e.user).pc}, not from the internet`,
+          'No failed logons came first, so this is not guessing: the attacker already had the password (phishing, reuse or a leak)',
+          'Reset the password, end the session, block the address and open a case'] };
+    },
+    build() {
+      const u = pick(uniqueUsers.filter(x => !x.isAdmin));
+      const host = pick(C.servers);
+      return [{ offsetMs: 0, event: win(0, 4624, { host: host.name, user: u.name, srcIp: unlistedIp(201, 250),
+        logonType: chance(0.5) ? 10 : 3, action: 'success', tags: ['scenario:external_logon'] }) }];
     },
   },
   beacon_unlisted: {

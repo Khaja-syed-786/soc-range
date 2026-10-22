@@ -37,11 +37,11 @@ Everything is simulated and runs on one machine with a single runtime dependency
 
 | Area | In this project |
 |---|---|
-| Detection engineering | 11 JSON rules across 4 rule types: single-event match, threshold (raw or distinct-value counts), intel lookup and beacon (interval regularity). Each rule is tuned against background noise, and a soak test checks the false-positive rate |
+| Detection engineering | 12 JSON rules across 4 rule types: single-event match, threshold (raw or distinct-value counts), intel lookup and beacon (interval regularity). Each rule is tuned against background noise, and a soak test checks the false-positive rate |
 | SOC triage | Alert queue with assignee, status, verdict (TP / FP / benign), analyst-adjustable severity and alert de-duplication |
 | Incident response | Cases that follow the NIST SP 800-61 lifecycle, a merged timeline, IOCs on cases and per-rule playbooks |
 | Threat intelligence | IOC lookup and pivoting over local data, an editable intel list, MITRE ATT&CK coverage and activity heatmap |
-| Analyst training | 15 scenarios (attacks plus benign and false-positive look-alikes), each with a computed answer key, and scoring on verdict, severity, escalation, MTTA/MTTR, playbook use and notes |
+| Analyst training | 16 scenarios (attacks plus benign and false-positive look-alikes), each with a computed answer key, and scoring on verdict, severity, escalation, MTTA/MTTR, playbook use and notes |
 | Operations | Shift-handover report with an auto-generated watch list and print-to-PDF |
 | Safe-by-design engineering | Binds to 127.0.0.1 by default (the Docker setup publishes on 127.0.0.1 only); documentation-range IPs and `*.example` domains only; validators refuse real-looking IPs, domains and hashes; no outbound calls; CSRF header on state changes |
 
@@ -60,6 +60,7 @@ Everything is simulated and runs on one machine with a single runtime dependency
 | R009 | Password spraying: one source, 5+ distinct users in 10 min | threshold (distinct) | T1110.003 |
 | R010 | Lateral movement: one account, 3+ workstations over the network in 15 min | threshold (distinct) | T1021 |
 | R011 | Beacon: 6 regular connections to the same IP in 15 min | beacon | T1071 |
+| R012 | Successful logon from an internet address (203.0.113.x) | match | T1078 |
 
 ### Architecture
 
@@ -75,7 +76,7 @@ generator.js --events--> store.js (in memory, saved to %LOCALAPPDATA%) --> detec
 - **Node.js 22+** and **Express 5** (the only runtime dependency)
 - Plain HTML, CSS and JavaScript front end: no framework, no build step, no CDN
 - JSON files for detection rules, playbooks, threat intel and scoring, editable without code changes
-- **102 automated tests** with the built-in `node:test` runner (see [Tests](#tests))
+- **108 automated tests** with the built-in `node:test` runner (see [Tests](#tests))
 
 ### Screenshots
 
@@ -163,7 +164,7 @@ Always pull by digest: a tag such as `latest` can be moved, a digest can't.
 
 ## Tests
 
-The project has **102 automated tests** using Node's built-in test runner. They need no extra packages and no
+The project has **108 automated tests** using Node's built-in test runner. They need no extra packages and no
 network access.
 
 ```bash
@@ -177,7 +178,7 @@ npm run lint            # ESLint
 | `test/core.test.js` | Event generator, detection rules, alert queue and triage, cases, playbooks, state persistence and upgrades |
 | `test/mitre-ioc.test.js` | MITRE ATT&CK coverage and activity heatmap, IOC lookup, editable intel list, IOCs on cases |
 | `test/exercise-handover.test.js` | Scenario mode and scoring, answer keys, MTTA/MTTR, shift handover |
-| `test/advanced-detections.test.js` | Phishing, password spraying, lateral movement and beacon detections, and a false-positive soak test |
+| `test/advanced-detections.test.js` | Phishing, password spraying, lateral movement, beacon and external-logon (R012) detections, and a false-positive soak test |
 | `test/engine.test.js` | The live loop: event rate, scenario drip-feed, auto-scenarios, tick hooks, start/stop |
 | `test/config.test.js` | The listen address (`SOCSIM_HOST`, default 127.0.0.1) and the non-loopback startup warning |
 | `test/server.test.js` | The HTTP API, started on a random local port: CSRF header check, validation, scenario injection, IOC lookup, cases, reset |
