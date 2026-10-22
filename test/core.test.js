@@ -18,6 +18,7 @@ const cases = require('../src/cases');
 const EXPECTED_RULE = {
   brute_force: 'R001', new_admin: 'R003', off_hours_login: 'R004', admin_patching: 'R004',
   c2_beacon: 'R005', cred_dump: 'R007', new_starter_account: 'R002', backup_agent_edr: 'R007',
+  external_logon: 'R012',
 };
 
 beforeEach(() => { store.reset(); detection.loadRules(); playbooks.load(); });
@@ -160,6 +161,6 @@ test('a v1 state file loads, gets cases, and old alerts get playbooks', () => {
   assert.strictEqual(store.state.version, store.VERSION); // v1 -> current
   assert.deepStrictEqual(store.state.cases, []);
   assert.strictEqual(store.state.nextCaseId, 1);
-  assert.strictEqual(playbooks.attachMissing(), 1);
+  assert.strictEqual(playbooks.attachMissing(), v1.alerts.length); // R001, plus R012 when a logon succeeded
   assert.strictEqual(store.state.alerts[0].playbook.id, 'PB-BRUTE');
 });

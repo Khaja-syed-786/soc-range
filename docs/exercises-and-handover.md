@@ -90,6 +90,7 @@ didn't.
 | Admin late-night patching | Benign | not raised | no |
 | Beacon to known-bad IP/domain | True positive | high or critical | required, both alerts in one case |
 | Credential dumping tool | True positive | critical | required |
+| Logon from the internet | True positive | high or critical | required |
 | **New:** IT admin creates a new-starter account | Benign | not raised | no |
 | **New:** EDR flags the backup agent | False positive | not raised | no |
 

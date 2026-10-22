@@ -1,4 +1,4 @@
-// Tests: phishing (R008), password spraying (R009), lateral movement (R010), beacon behaviour (R011),
+// Tests: phishing (R008), password spraying (R009), lateral movement (R010), beacon behaviour (R011), external logon (R012),
 // mail + change log sources, and the "doing nothing earns no severity/escalation marks" scoring fix.
 const { test, beforeEach, after } = require('node:test');
 const assert = require('node:assert');
@@ -16,6 +16,7 @@ const gen = require('../src/generator');
 const playbooks = require('../src/playbooks');
 const intel = require('../src/intel');
 const exercise = require('../src/exercise');
+const cases = require('../src/cases');
 const mitre = require('../src/mitre');
 const ioc = require('../src/ioc');
 const C = require('../src/company');
@@ -116,7 +117,7 @@ test('every scenario raises exactly the rules its answer key names (old and new)
   }
 });
 
-test('phishing_link: with credentials submitted, a later logon from a new IP raises no alert of its own', () => {
+test('phishing_link: with credentials submitted, a later logon from a new IP raises R012, not part of the R008 alert', () => {
   const seen = new Set();
   for (let i = 0; i < 60 && seen.size < 2; i++) {
     fresh();
@@ -137,9 +138,12 @@ test('phishing_link: with credentials submitted, a later logon from a new IP rai
     assert.ok(logon.srcIp.startsWith('203.0.113.') && logon.srcIp !== fwIp && !intel.lists.badIps.has(logon.srcIp));
     const gap = (logon.ts - submit.ts) / 1000;
     assert.ok(gap >= 180 && gap <= 300, `logon ${gap}s after submit`);
-    assert.ok(store.state.alerts.every(x => !x.relatedEventIds.includes(logon.id)), 'the logon is not in any alert');
+    const withLogon = store.state.alerts.filter(x => x.relatedEventIds.includes(logon.id));
+    assert.deepStrictEqual(withLogon.map(x => x.ruleId), ['R012'], 'only R012 alerts on the logon');
+    assert.ok(!withLogon[0].relatedEventIds.includes(evs[1].id), 'the R012 alert holds the logon, not the click');
+    assert.deepStrictEqual(a.rules, ['R008', 'R012']);
     assert.deepStrictEqual([a.severities, a.case], [['critical'], 'required']);
-    assert.ok(a.clues.some(c => c.includes(logon.srcIp) && /Log Search/.test(c)), 'clues point to the logon');
+    assert.ok(a.clues.some(c => c.includes(logon.srcIp) && /R012/.test(c) && /Log Search/.test(c)), 'clues point to the logon');
   }
   assert.strictEqual(seen.size, 2, 'both variants occur');
   assert.ok(playbooks.forRule('R008').steps.some(s => /logons from new IPs after the click/i.test(s.title)));
@@ -220,7 +224,7 @@ test('new scenarios use simulated IPs and .example domains only', () => {
   }
 });
 
-test('a day of noise at the default rate has mail and change events but raises none of R008-R011', () => {
+test('a day of noise at the default rate has mail and change events but raises none of R008-R012', () => {
   const start = new Date(2026, 8, 30).getTime(); // a Wednesday, so office-hour mail noise exists
   const sources = {};
   let id = 1;
@@ -228,13 +232,13 @@ test('a day of noise at the default rate has mail and change events but raises n
     const e = gen.noise(t); e.id = id++;
     sources[e.source] = (sources[e.source] || 0) + 1;
     if (e.action === 'link_click') assert.ok(e.domainAgeDays > 30, 'noise clicks only go to established domains');
-    for (const h of detection.evaluate(e)) assert.ok(!['R008', 'R009', 'R010', 'R011'].includes(h.rule.id), `${h.rule.id} fired on noise`);
+    for (const h of detection.evaluate(e)) assert.ok(!['R008', 'R009', 'R010', 'R011', 'R012'].includes(h.rule.id), `${h.rule.id} fired on noise`);
   }
   assert.ok(sources.mail > 0 && sources.change > 0);
 });
 
 test('playbooks attach to the new rules; MITRE has T1110.003; IOC lookup sees mail domains', () => {
-  for (const [key, pb] of [['phishing_link', 'PB-PHISH'], ['password_spray', 'PB-SPRAY'], ['lateral_movement', 'PB-LATERAL'], ['beacon_unlisted', 'PB-BEACON-PATTERN']]) {
+  for (const [key, pb] of [['phishing_link', 'PB-PHISH'], ['password_spray', 'PB-SPRAY'], ['lateral_movement', 'PB-LATERAL'], ['beacon_unlisted', 'PB-BEACON-PATTERN'], ['external_logon', 'PB-EXTLOGON']]) {
     fresh();
     run(key);
     assert.strictEqual(store.state.alerts[0].playbook.id, pb, key);
@@ -245,6 +249,81 @@ test('playbooks attach to the new rules; MITRE has T1110.003; IOC lookup sees ma
   const r = ioc.lookup(evs[0].senderDomain);
   assert.ok(r.sightings.sources.some(s => s.name === 'mail'));
   assert.ok(r.alerts.some(a => a.title === rule('R008').name));
+});
+
+// ---------- R012: successful logon from an internet address ----------
+
+test('R012 is a high-severity match rule for T1078 on successful logons from 203.0.113.x', () => {
+  const r = rule('R012');
+  assert.deepStrictEqual([r.type, r.severity, r.mitre, r.enabled, r.groupBy], ['match', 'high', 'T1078', true, 'user']);
+  assert.ok(mitre.catalogue().some(t => t.id === 'T1078'));
+  assert.strictEqual(detection.getRules().length, 12);
+});
+
+test('R012 fires on a 4624 from 203.0.113.x and on nothing else', () => {
+  const t0 = dayTs();
+  const base = { host: 'DC01', user: 'jdoe', logonType: 3, action: 'success' };
+  const hit = list => list.filter(h => h.rule.id === 'R012').length;
+  assert.strictEqual(hit(feed([ev(t0, { ...base, eventId: 4624, srcIp: '203.0.113.50' })])), 1, 'internet success');
+  assert.strictEqual(hit(feed([ev(t0, { ...base, eventId: 4624, srcIp: '192.0.2.105' })])), 0, 'company address');
+  assert.strictEqual(hit(feed([ev(t0, { ...base, eventId: 4625, srcIp: '203.0.113.50', action: 'failure' })])), 0, 'failure');
+  assert.strictEqual(hit(feed([ev(t0, { ...base, eventId: 4672, srcIp: '203.0.113.50' })])), 0, 'other event id');
+  assert.strictEqual(hit(feed([{ ...ev(t0, { ...base, eventId: 4624, srcIp: '203.0.113.50' }), source: 'firewall' }])), 0, 'other source');
+});
+
+test('external_logon: one 4624 from an unlisted internet IP raises exactly R012 with PB-EXTLOGON', () => {
+  const types = new Set();
+  for (let i = 0; i < 40; i++) {
+    fresh();
+    const evs = run('external_logon');
+    assert.strictEqual(evs.length, 1);
+    const [e] = evs;
+    types.add(e.logonType);
+    assert.ok(e.eventId === 4624 && e.srcIp.startsWith('203.0.113.') && !intel.lists.badIps.has(e.srcIp));
+    assert.ok(C.servers.some(s => s.name === e.host) && C.users.some(u => u.name === e.user));
+    assert.deepStrictEqual(ruleIds(), ['R012']);
+    assert.strictEqual(store.state.alerts[0].playbook.id, 'PB-EXTLOGON');
+    const a = gen.scenarios.external_logon.answer(evs);
+    assert.deepStrictEqual([a.verdict, a.severities, a.case, a.rules], ['true_positive', ['high', 'critical'], 'required', ['R012']]);
+    assert.ok(a.explain.includes(e.user) && a.explain.includes(e.srcIp) && a.clues.some(c => c.includes(e.srcIp)));
+  }
+  assert.deepStrictEqual([...types].sort((a, b) => a - b), [3, 10], 'both logon types occur');
+});
+
+test('the logon that succeeds in a takeover scenario now raises R012 as well', () => {
+  const hasLogon = evs => evs.some(e => e.eventId === 4624);
+  for (const key of ['brute_force', 'password_spray', 'phishing_link']) {
+    const seen = new Set();
+    for (let i = 0; i < 200 && seen.size < 2; i++) {
+      fresh();
+      const evs = run(key);
+      const logon = evs.find(e => e.eventId === 4624);
+      const a = gen.scenarios[key].answer(evs);
+      seen.add(!!logon);
+      const r12 = store.state.alerts.filter(x => x.ruleId === 'R012');
+      if (logon) {
+        assert.strictEqual(r12.length, 1, `${key}: one R012 alert`);
+        assert.ok(r12[0].relatedEventIds.includes(logon.id));
+        assert.ok(a.rules.includes('R012'), `${key}: the answer key lists R012`);
+      } else {
+        assert.strictEqual(r12.length, 0, `${key}: no logon, no R012`);
+        assert.ok(!a.rules.includes('R012'));
+      }
+    }
+    assert.strictEqual(seen.size, 2, `${key}: both variants occur`);
+    assert.ok(hasLogon([{ eventId: 4624 }]));
+  }
+});
+
+test('an exercise on external_logon: a true positive, rated critical and escalated, earns full marks', () => {
+  const t0 = dayTs();
+  const ex = startEx('external_logon', t0);
+  const list = exercise.exerciseAlerts(ex);
+  assert.deepStrictEqual(list.map(a => a.ruleId), ['R012']);
+  alerts.update(list[0].id, { verdict: 'true_positive', severity: 'critical', status: 'Investigating', assignee: 'analyst1' }, t0 + 30e3);
+  cases.escalate(list[0].id, null, t0 + 40e3);
+  const r = exercise.submit(t0 + 60e3);
+  for (const k of ['verdict', 'severity', 'escalation']) assert.strictEqual(crit(r, k).credit, 1, k);
 });
 
 // ---------- scoring fix ----------

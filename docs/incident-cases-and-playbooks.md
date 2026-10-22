@@ -76,6 +76,7 @@ Each rule has a playbook, and it **attaches automatically** when the alert is cr
 | Off-hours interactive logon | R004 |
 | Connection to known-bad IP or domain (beacon) | R005, R006 |
 | Suspicious tool detected by EDR | R007 |
+| Successful logon from an internet address | R012 |
 
 In the alert detail panel each step has:
 
