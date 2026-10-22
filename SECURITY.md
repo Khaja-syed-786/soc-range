@@ -8,6 +8,9 @@ domains end in `.example`, and the lookups refuse real-looking values. It contai
 tooling, reads no real logs and makes no outbound network calls. It is meant to run on your own PC, listening on
 `127.0.0.1` only, and it has no login.
 
+Rate limiting is deliberately not implemented: the server binds to `127.0.0.1` only and is a single-user local
+tool with no untrusted network exposure, so there is no network abuse for a limiter to mitigate.
+
 ## Reporting a vulnerability
 
 Please report vulnerabilities privately through GitHub:
