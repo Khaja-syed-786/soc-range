@@ -1,12 +1,12 @@
 {
-  "name": "SOC Range",
+  "name": "SOC Simulator",
   "image": "mcr.microsoft.com/devcontainers/javascript-node:5.2.1-22-bookworm",
   "postCreateCommand": "npm ci",
   "postAttachCommand": "npm start",
   "forwardPorts": [5000],
   "portsAttributes": {
     "5000": {
-      "label": "SOC Range",
+      "label": "SOC Simulator",
       "onAutoForward": "openBrowser"
     }
   }

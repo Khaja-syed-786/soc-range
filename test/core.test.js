@@ -14,10 +14,12 @@ const alerts = require('../src/alerts');
 const gen = require('../src/generator');
 const playbooks = require('../src/playbooks');
 const cases = require('../src/cases');
+const C = require('../src/company');
 
 const EXPECTED_RULE = {
   brute_force: 'R001', new_admin: 'R003', off_hours_login: 'R004', admin_patching: 'R004',
   c2_beacon: 'R005', cred_dump: 'R007', new_starter_account: 'R002', backup_agent_edr: 'R007',
+  external_logon: 'R012', approved_admin_add: 'R003',
 };
 
 beforeEach(() => { store.reset(); detection.loadRules(); playbooks.load(); });
@@ -34,6 +36,25 @@ for (const [key, rule] of Object.entries(EXPECTED_RULE)) {
     assert.ok(runScenario(key).includes(rule));
   });
 }
+
+test('approved_admin_add raises only R003: an IT admin, an existing user and an approved change reference', () => {
+  for (let i = 0; i < 20; i++) {
+    store.reset(); detection.loadRules();
+    const evs = gen.expand('approved_admin_add', Date.now());
+    evs.forEach(e => engine.ingest(e));
+    assert.strictEqual(evs.length, 1);
+    const [e] = evs;
+    assert.deepStrictEqual(store.state.alerts.map(a => a.ruleId), ['R003']);
+    assert.ok(C.users.find(u => u.name === e.user).isAdmin, 'actor is an IT admin');
+    const target = C.users.find(u => u.name === e.targetUser);
+    assert.ok(target && !target.isAdmin, 'target is an existing non-admin employee');
+    assert.match(e.changeRef, /^CHG-\d{5}$/);
+    assert.strictEqual(e.group, 'Administrators');
+    const a = gen.scenarios.approved_admin_add.answer(evs);
+    assert.deepStrictEqual([a.verdict, a.severities, a.case, a.rules], ['benign', 'not_raised', 'never', ['R003']]);
+    assert.ok(a.explain.includes(e.changeRef) && a.clues.some(c => c.includes(e.changeRef)));
+  }
+});
 
 test('user_typos (5 failures over 40s) triggers brute force once - a benign case to triage', () => {
   const ids = runScenario('user_typos');
@@ -160,6 +181,6 @@ test('a v1 state file loads, gets cases, and old alerts get playbooks', () => {
   assert.strictEqual(store.state.version, store.VERSION); // v1 -> current
   assert.deepStrictEqual(store.state.cases, []);
   assert.strictEqual(store.state.nextCaseId, 1);
-  assert.strictEqual(playbooks.attachMissing(), 1);
+  assert.strictEqual(playbooks.attachMissing(), v1.alerts.length); // R001, plus R012 when a logon succeeded
   assert.strictEqual(store.state.alerts[0].playbook.id, 'PB-BRUTE');
 });

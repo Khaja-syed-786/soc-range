@@ -147,5 +147,17 @@
     "maxJitter": 0.05,
     "minIntervalSeconds": 45,
     "suppressSeconds": 1800
+  },
+  {
+    "id": "R012",
+    "name": "Successful logon from an internet address (203.0.113.x)",
+    "enabled": true,
+    "type": "match",
+    "severity": "high",
+    "mitre": "T1078",
+    "description": "A successful logon (4624) whose source is an internet address, not a company one, means someone outside got in with a valid account. Failed attempts from the same range are caught by R001 and R009; this rule catches the one that worked.",
+    "filter": { "source": "winsec", "eventId": 4624, "srcIp": { "contains": "203.0.113." } },
+    "groupBy": "user",
+    "suppressSeconds": 1800
   }
 ]

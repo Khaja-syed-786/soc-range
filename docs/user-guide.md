@@ -40,11 +40,15 @@ Other settings in `config.json`: `eventCap` (default 50,000, about one day at th
 |---|---|---|
 | Brute force | Burst of 4625 from a `203.0.113.x` IP. Did a 4624 **success** follow? That means the attacker got in | True positive |
 | User mistypes password | 5 failures from the user's *own* PC IP, then a success | Benign |
-| New account + Administrators | 4720 then 4732 on DC01. Was there a change ticket? (There never is, here.) | True positive |
+| New account + Administrators | 4720 then 4732 on DC01. Was there a change ticket? (None in this attack.) | True positive |
+| Admin adds an existing user to Administrators | A lone 4732 on DC01 by an IT admin, for an existing employee, with an approved `CHG-` change reference. No 4720 first | Benign |
 | Unusual-hour logon (normal user) | Keyboard logon at 01:00–05:00 by a non-IT user | True positive |
 | Admin late-night patching | Same alert, but the user is an IT admin | Benign |
 | Beacon to known-bad IP | DNS lookup of a bad domain, then repeated connections every minute | True positive |
 | Credential dumping tool | EDR detection on a host. Check who was logged on there | True positive |
+| IT admin creates an account for a new starter (benign) | R002 fires on a 4720 made by an IT admin that carries an approved `CHG-` change reference. No 4732 follows, so the account was not made an administrator (compare with *New account + Administrators*) | Benign |
+| EDR flags the backup agent reading protected memory (false positive) | R007 fires on `backup_agent.exe`, run by the `svc_backup` service account and signed by the backup vendor. The hash is not on the intel list and nothing else happened on the host. The activity is allowed, but the rule was wrong to call it credential dumping, so it is a false positive (the fix is a rule exception), not merely benign | False positive |
+| Logon from the internet | One successful 4624 on a server from a `203.0.113.x` IP (R012). No failures first: the attacker already had the password | True positive |
 
 Tip: for any alert, open its events in Log Search, then clear the `ids` filter and search the same **host**
 or **user** to see what happened before and after.

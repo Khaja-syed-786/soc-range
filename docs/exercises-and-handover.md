@@ -86,10 +86,12 @@ didn't.
 | Brute force, a logon succeeded | True positive | critical | required |
 | User mistypes password | Benign | not raised | no |
 | New account + Administrators | True positive | critical | required, both alerts in one case |
+| Admin adds an existing user to Administrators (approved change) | Benign | not raised | no |
 | Unusual-hour logon (normal user) | True positive | medium or high | required |
 | Admin late-night patching | Benign | not raised | no |
 | Beacon to known-bad IP/domain | True positive | high or critical | required, both alerts in one case |
 | Credential dumping tool | True positive | critical | required |
+| Logon from the internet | True positive | high or critical | required |
 | **New:** IT admin creates a new-starter account | Benign | not raised | no |
 | **New:** EDR flags the backup agent | False positive | not raised | no |
 

@@ -115,5 +115,18 @@
       { "title": "Add the IP to the intel list and block it", "help": "From now on the known-bad IP rule (R005) also catches it." },
       { "title": "Document the findings and set a verdict", "help": "Note the interval and how long the beaconing went on." }
     ]
+  },
+  {
+    "id": "PB-EXTLOGON",
+    "name": "Successful logon from an internet address",
+    "ruleIds": ["R012"],
+    "steps": [
+      { "title": "Confirm the source address is outside the company", "help": "Company hosts use 192.0.2.x. A 203.0.113.x source is the simulated internet, so this logon came from outside." },
+      { "title": "Check which account, which host and how it logged on", "help": "Logon type 10 is Remote Desktop and type 3 is over the network. Note whether the host is a server and whether the account is privileged." },
+      { "title": "Look for what led up to the logon", "help": "Search the user in Log Search and the source IP in IOC Lookup: earlier 4625 failures (R001, R009) or a phishing click and form submit (R008) explain how the password was obtained." },
+      { "title": "Look for what the account did after the logon", "help": "Search the user for special-privilege logons (4672), new accounts (4720), admin group changes (4732) and logons to other hosts." },
+      { "title": "Contain: reset the password, end the session and block the address", "help": "Stop the attacker from using the account, and block the source IP at the firewall." },
+      { "title": "Open a case and set a verdict", "help": "A confirmed logon by an outsider is an account takeover. Record the timeline, the evidence and the actions taken." }
+    ]
   }
 ]

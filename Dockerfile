@@ -1,4 +1,4 @@
-# SOC Range container image. Build: docker compose build (see README, "Run with Docker").
+# SOC Simulator container image. Build: docker compose build (see README, "Run with Docker").
 # Base: node:22.23.3-alpine3.24, pinned by digest (multi-arch index, checked against Docker Hub 2026-10-16).
 # Written out in both FROM lines (not via ARG) so Dependabot can see and update the tag and digest together.
 
@@ -35,7 +35,7 @@ COPY --chown=1000:1000 rules ./rules
 # OCI image labels. CI passes the commit SHA as REVISION; a local `docker compose build` leaves it "unknown".
 ARG REVISION=unknown
 LABEL org.opencontainers.image.source="https://github.com/Khaja-syed-786/soc-range" \
-      org.opencontainers.image.description="SOC Range: a SOC analyst training simulator. All data is simulated." \
+      org.opencontainers.image.description="SOC Simulator: a SOC analyst training simulator. All data is simulated." \
       org.opencontainers.image.licenses="MIT" \
       org.opencontainers.image.revision="${REVISION}"
 

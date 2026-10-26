@@ -43,8 +43,9 @@ function toast(msg, err = false) {
 function show(view) {
   document.querySelectorAll('.view').forEach(v => v.classList.toggle('active', v.id === `view-${view}`));
   document.querySelectorAll('nav a').forEach(a => a.classList.toggle('active', a.dataset.view === view));
-  ({ dashboard: loadDashboard, alerts: loadAlerts, cases: loadCases, search: runSearch, ioc: loadIoc, mitre: loadMitre,
-    exercise: loadExercise, handover: loadHandover, rules: loadRules, generator: loadGenerator }[view] || (() => {}))();
+  const loaders = { dashboard: loadDashboard, alerts: loadAlerts, cases: loadCases, search: runSearch, ioc: loadIoc, mitre: loadMitre,
+    exercise: loadExercise, handover: loadHandover, rules: loadRules, generator: loadGenerator };
+  if (Object.hasOwn(loaders, view)) loaders[view]();
 }
 const currentView = () => (location.hash || '#dashboard').slice(1).split('?')[0];
 const hashParam = k => new URLSearchParams(location.hash.split('?')[1] || '').get(k);

@@ -1,4 +1,4 @@
-# SOC Range in Docker. Usage: see README, "Run with Docker".
+# SOC Simulator in Docker. Usage: see README, "Run with Docker".
 services:
   soc-range:
     build: .
