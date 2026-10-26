@@ -8,6 +8,8 @@
 
 ![SOC Simulator console: alerts arriving, triage, scenario scoring](docs/demo.gif)
 
+A free SOC simulator for aspiring analysts and students: triage simulated alerts in your browser, with nothing to install (a free GitHub account is needed for the Codespaces demo).
+
 **Try it in your browser:** the Codespaces button starts a private copy of SOC Simulator in a GitHub Codespace, with nothing
 to install. It needs a GitHub account; the app opens in a private forwarded port that only you can reach.
 On first launch VS Code asks "Do you trust the authors of the files in this folder?": click **Trust Folder & Continue**.
