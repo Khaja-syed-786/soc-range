@@ -115,6 +115,54 @@ $('#alertTable tbody').addEventListener('click', e => {
 });
 ['#fStatus', '#fSeverity', '#fAssignee', '#fMitre'].forEach(s => $(s).addEventListener('change', loadAlerts));
 
+// ---------- AI Triage Copilot (optional; local Ollama; suggestions are never saved automatically) ----------
+const copilotLocked = () => EX.running && !META.aiCopilot.allowInExercises;
+const copilotHtml = key => copilotLocked()
+  ? '<p class="muted">AI Copilot is switched off during scored exercises.</p>'
+  : `<div class="row"><button id="${key}" class="ghost">Ask AI Copilot</button><span class="muted">optional, runs on your PC</span></div><div id="${key}Out"></div>`;
+
+function copilotResultHtml(r, key) {
+  if (r.status !== 'ok') {
+    return `<div class="note"><b>${esc(r.message)}</b><ol>${(r.setup || []).map(t => `<li>${esc(t)}</li>`).join('')}</ol></div>`;
+  }
+  if (!r.parsed) {
+    return `<div class="note"><b>${esc(r.label)}</b> <span class="muted">&middot; ${esc(r.model)}</span>
+      <p class="muted">The model did not answer in the expected format, so this is its raw reply:</p><pre>${esc(r.raw)}</pre></div>`;
+  }
+  const x = r.result;
+  return `<div class="note"><b>${esc(r.label)}</b> <span class="muted">&middot; ${esc(r.model)}</span>
+    <h3 class="muted">What happened</h3><p>${esc(x.summary)}</p>
+    <h3 class="muted">MITRE ATT&amp;CK</h3>
+    <p><span class="mono">${esc(x.mitre.techniqueId)}</span> &middot; ${esc(x.mitre.tactic)} <span class="muted">(${x.mitre.assessment} the rule's mapping)</span><br>${esc(x.mitre.note)}</p>
+    <h3 class="muted">Severity</h3><p><span class="sev ${x.severity.level}">${x.severity.level}</span> ${esc(x.severity.justification)}</p>
+    <h3 class="muted">Suggested next steps</h3><ol>${x.nextSteps.map(t => `<li>${esc(t)}</li>`).join('')}</ol>
+    <h3 class="muted">Draft note <span class="muted">(edit it first; nothing is saved until you add it yourself)</span></h3>
+    <textarea id="${key}Draft">${esc(x.draftNote)}</textarea>
+    <div class="row"><button class="ghost" id="${key}Copy">Copy</button><button class="ghost" id="${key}Use">Put in the note box</button></div></div>`;
+}
+
+function bindCopilot(key, body, noteSel) {
+  const btn = $(`#${key}`);
+  if (!btn) return;
+  const out = $(`#${key}Out`);
+  btn.onclick = async () => {
+    btn.disabled = true;
+    out.innerHTML = '<p class="muted">Asking the local model... this can take a while on the first run.</p>';
+    try {
+      const r = await api('/api/ai/triage', { method: 'POST', body });
+      out.innerHTML = copilotResultHtml(r, key);
+      const draft = $(`#${key}Draft`);
+      if (draft) {
+        $(`#${key}Copy`).onclick = async () => {
+          try { await navigator.clipboard.writeText(draft.value); toast('Copied'); } catch (e) { draft.select(); toast('Press Ctrl+C to copy', true); }
+        };
+        $(`#${key}Use`).onclick = () => { $(noteSel).value = draft.value; $(noteSel).focus(); toast('Draft placed in the note box. Review it, then add the note.'); };
+      }
+    } catch (e) { out.innerHTML = ''; toast(e.message, true); }
+    btn.disabled = false;
+  };
+}
+
 async function openAlert(id) {
   selectedAlert = id;
   document.querySelectorAll('#alertTable tr').forEach(tr => tr.classList.toggle('selected', Number(tr.dataset.id) === id));
@@ -149,6 +197,7 @@ async function openAlert(id) {
       ? `In incident case <a href="#cases" id="dCaseLink">Case #${a.caseId} &rarr;</a>`
       : `<select id="dCaseSel"><option value="">New case</option>${openCases.map(c => `<option value="${c.id}">#${c.id} ${esc(c.title)}</option>`).join('')}</select>
          <button id="dEscalate" class="ghost">Escalate to case</button>`}</div>
+    ${copilotHtml('dAi')}
     ${playbookHtml(a)}
     <h3 class="muted">Related events (${a.events.length}) <a href="#search" id="dSearch">open in Log Search &rarr;</a></h3>
     <table><tbody>${a.events.slice(0, 50).map(e => `<tr><td class="mono">${fmtTs(e.ts)}</td><td>${esc(e.source)} ${esc(e.eventId || '')}</td>
@@ -184,6 +233,7 @@ async function openAlert(id) {
     } catch (e) { toast(e.message, true); }
   };
   bindPlaybook(a, () => openAlert(id));
+  bindCopilot('dAi', { alertId: id }, '#dNote');
   $('#dSearch').onclick = ev => {
     ev.preventDefault();
     const f = $('#searchForm');
@@ -283,6 +333,7 @@ async function openCase(id, keepScroll = false) {
       '<p class="muted">None yet. Record the IPs, domains and hashes involved, or use "Add to case" on the IOC Lookup page.</p>'}
     ${closed ? '' : `<div class="row"><input id="cIocVal" placeholder="IP, domain or hash" size="28">
       <input id="cIocNote" placeholder="Why it matters (optional)" size="28"> <button id="cIocAdd" class="ghost">Add IOC</button></div>`}
+    ${copilotHtml('cAi')}
     <h3 class="muted">Timeline (${c.timeline.length})</h3>
     <div class="tl">${c.timeline.map((t, i) => `<div class="tl-item ${t.kind}" data-tl="${i}">
       <span class="tl-kind">${TL_LABEL[t.kind]}</span> <span class="mono muted">${fmtTs(t.ts)}</span>
@@ -306,6 +357,7 @@ async function openCase(id, keepScroll = false) {
     catch (e) { toast(e.message, true); }
     openCase(id, true); loadCaseList(); refreshBadge();
   };
+  bindCopilot('cAi', { caseId: id }, '#cNote');
   box.querySelectorAll('[data-phase]').forEach(b => { b.onclick = () => patch({ status: b.dataset.phase }); });
   $('#cSave').onclick = () => patch({ owner: $('#cOwner').value, severity: $('#cSev').value });
   $('#cSaveSummary').onclick = () => patch({ summary: $('#cSummary').value });

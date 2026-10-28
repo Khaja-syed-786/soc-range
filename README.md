@@ -25,7 +25,7 @@ threat-intel pivoting and shift handover) without needing a real network, real l
 > **Simulated data only.** Every log, user, host, IP address, domain, file hash and "attack" is made up by the
 > built-in generator. IPs come only from the documentation ranges `192.0.2.0/24`, `198.51.100.0/24` and
 > `203.0.113.0/24`, and domains end in the reserved `.example` TLD. The app reads no real logs, makes no
-> outbound network calls and refuses real-looking IPs, domains and hashes in its lookups. It contains no real
+> outbound network calls (the optional AI Copilot talks only to an Ollama on this same PC, and is off by default) and refuses real-looking IPs, domains and hashes in its lookups. It contains no real
 > malware or attack tooling.
 
 ## Overview
@@ -45,7 +45,8 @@ Everything is simulated and runs on one machine with a single runtime dependency
 | Threat intelligence | IOC lookup and pivoting over local data, an editable intel list, MITRE ATT&CK coverage and activity heatmap |
 | Analyst training | 17 scenarios (attacks plus benign and false-positive look-alikes), each with a computed answer key, and scoring on verdict, severity, escalation, MTTA/MTTR, playbook use and notes |
 | Operations | Shift-handover report with an auto-generated watch list and print-to-PDF |
-| Safe-by-design engineering | Binds to 127.0.0.1 by default (the Docker setup publishes on 127.0.0.1 only); documentation-range IPs and `*.example` domains only; validators refuse real-looking IPs, domains and hashes; no outbound calls; CSRF header on state changes |
+| Safe-by-design engineering | Binds to 127.0.0.1 by default (the Docker setup publishes on 127.0.0.1 only); documentation-range IPs and `*.example` domains only; validators refuse real-looking IPs, domains and hashes; no outbound calls (the optional copilot reaches only a loopback Ollama); CSRF header on state changes |
+| AI-assisted triage (optional) | "Ask AI Copilot" on alerts and cases: summary, MITRE mapping, severity check, next steps and a draft note from a local Ollama model. Off by default, loopback only, no cloud or API keys, disabled during scored exercises. See [docs/ai-copilot.md](docs/ai-copilot.md) |
 
 ### Detection rules
 
@@ -78,7 +79,7 @@ generator.js --events--> store.js (in memory, saved to %LOCALAPPDATA%) --> detec
 - **Node.js 22+** and **Express 5** (the only runtime dependency)
 - Plain HTML, CSS and JavaScript front end: no framework, no build step, no CDN
 - JSON files for detection rules, playbooks, threat intel and scoring, editable without code changes
-- **110 automated tests** with the built-in `node:test` runner (see [Tests](#tests))
+- **141 automated tests** with the built-in `node:test` runner (see [Tests](#tests))
 
 ### Screenshots
 
@@ -166,7 +167,7 @@ Always pull by digest: a tag such as `latest` can be moved, a digest can't.
 
 ## Tests
 
-The project has **110 automated tests** using Node's built-in test runner. They need no extra packages and no
+The project has **141 automated tests** using Node's built-in test runner. They need no extra packages and no
 network access.
 
 ```bash
@@ -183,6 +184,7 @@ npm run lint            # ESLint
 | `test/advanced-detections.test.js` | Phishing, password spraying, lateral movement, beacon and external-logon (R012) detections, and a false-positive soak test |
 | `test/engine.test.js` | The live loop: event rate, scenario drip-feed, auto-scenarios, tick hooks, start/stop |
 | `test/config.test.js` | The listen address (`SOCSIM_HOST`, default 127.0.0.1) and the non-loopback startup warning |
+| `test/ai-copilot.test.js`, `test/ai-copilot-server.test.js` | The optional AI Copilot against a mocked Ollama: on/off, Ollama down, timeout, invalid JSON, loopback-only URL, exercise lockout, the HTTP route |
 | `test/server.test.js` | The HTTP API, started on a random local port: CSRF header check, validation, scenario injection, IOC lookup, cases, reset |
 
 ### CI checks
@@ -219,6 +221,7 @@ stays on `ubuntu-latest` because its name is part of a required check.
 | [Incident cases and playbooks](docs/incident-cases-and-playbooks.md) | Alerts vs. cases, the NIST lifecycle, editable playbooks |
 | [MITRE ATT&CK and IOC lookup](docs/mitre-and-ioc.md) | Coverage and activity heatmaps, IOC pivoting, the editable intel list |
 | [Exercises and shift handover](docs/exercises-and-handover.md) | Scored scenario mode, answer keys, MTTA/MTTR, the handover report |
+| [AI Triage Copilot](docs/ai-copilot.md) | Optional local-Ollama helper: setup, what it sends, privacy, exercise lockout |
 | [Advanced detections](docs/advanced-detections.md) | Phishing, password spraying, lateral movement and beacon behaviour |
 | [Architecture](docs/architecture.md) | Data flow, project layout, saved state, development history |
 | [CI/CD pipeline](docs/ci-cd.md) | Every gate and why it exists, measured run times, suppressions, known gaps, verifying a release |
