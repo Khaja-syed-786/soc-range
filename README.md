@@ -151,7 +151,7 @@ in; the release workflow runs them against the image before it creates the relea
 
 <!-- release-verify: the release notes and the publish job use the commands in this block -->
 ```bash
-VERSION=v0.1.0
+VERSION=v0.2.0
 DIGEST=sha256:<digest from the release notes>
 IMAGE=ghcr.io/khaja-syed-786/soc-range
 IDENTITY="https://github.com/Khaja-syed-786/soc-range/.github/workflows/release.yml@refs/tags/$VERSION"
