@@ -207,17 +207,40 @@ function assess(id, ruleMitre) {
   return tags.some(t => t.split('.')[0] === id.split('.')[0]) ? 'refines' : 'differs';
 }
 
-// Keep the model's technique and tactic only when both are well formed (ID pattern, one of the 14 tactics); otherwise use the
-// rule's own mapping, marked as such. null when it is invalid and there is no rule mapping to fall back to.
+const parentOf = id => id.split('.')[0];
+
+// Primary tactic of a technique (or sub-technique) from the built-in ATT&CK catalogue in mitre.js, or null if it is not there.
+// A technique that sits in several tactics (T1078) gets the first one listed.
+function mapTactic(id) {
+  const t = mitre.find(id);
+  return (t && mitre.TACTICS.find(x => x.id === t.tactics[0])?.name) || null;
+}
+
+// The model's tactic is not trusted: it is derived from the technique. Order:
+//   1. the technique is the alert rule's technique (or shares its parent, T1566.001 -> T1566): the rule's tactic
+//   2. any other technique in the built-in ATT&CK map: the map's tactic
+//   3. neither: the model's own tactic, labelled AI-suggested (null if it did not give a valid one)
+function deriveTactic(id, modelTactic, ruleMitre) {
+  const tag = mitre.tags(ruleMitre).find(t => t === id || parentOf(t) === parentOf(id));
+  const fromRule = tag && mapTactic(tag);
+  if (fromRule) return { tactic: fromRule, tacticSource: 'detection rule' };
+  const fromMap = mapTactic(id);
+  if (fromMap) return { tactic: fromMap, tacticSource: 'ATT&CK map' };
+  return modelTactic ? { tactic: modelTactic, tacticSource: 'AI-suggested' } : null;
+}
+
+// Keep the model's technique when its ID is well formed and give it a tactic derived from ATT&CK. An unusable technique ID
+// (or no tactic to be had at all) falls back to the rule's own mapping, marked as such. null when there is nothing to fall back to.
 function checkMitre(m, ruleMitre) {
   const id = String(m.techniqueId || '').trim().toUpperCase();
-  const tactic = canonicalTactic(m.tactic);
-  if (TECHNIQUE_ID.test(id) && tactic) {
+  const t = TECHNIQUE_ID.test(id) && deriveTactic(id, canonicalTactic(m.tactic), ruleMitre);
+  if (t) {
     const name = typeof m.techniqueName === 'string' ? m.techniqueName.trim().slice(0, 120) : '';
-    return { tactic, techniqueId: id, name, assessment: assess(id, ruleMitre), source: 'model' };
+    return { tactic: t.tactic, techniqueId: id, name, assessment: assess(id, ruleMitre), source: 'model', tacticSource: t.tacticSource };
   }
   const rule = ruleMapping(ruleMitre);
-  return rule ? { tactic: rule.tactic, techniqueId: rule.id, name: rule.name, assessment: 'rule', source: 'detection rule' } : null;
+  return rule ? { tactic: rule.tactic, techniqueId: rule.id, name: rule.name, assessment: 'rule', source: 'detection rule',
+    tacticSource: 'detection rule' } : null;
 }
 
 // Parse the model's text into the strict shape, or return null when it does not fit.
@@ -266,6 +289,13 @@ const FALLBACK_STEPS = [
   'Playbook: work through the steps on the alert',
 ];
 
+// A next step that is empty, too short to mean anything, or a leftover template placeholder (%name, {{name}}, <name>)
+const MIN_STEP_CHARS = 8;
+const PLACEHOLDER = /^\s*%|%[A-Za-z_]\w*|\{\{[^}]*\}\}|<[^<>\s][^<>]*>/;
+const isJunkStep = s => typeof s !== 'string' || s.trim().length < MIN_STEP_CHARS || PLACEHOLDER.test(s);
+const stepKey = s => s.toLowerCase().replace(/\s+/g, ' ').replace(/[\s.;:,!]+$/, '').trim();
+const dedupe = steps => { const seen = new Set(); return steps.filter(s => { const k = stepKey(s); return !seen.has(k) && seen.add(k); }); };
+
 function isInternalIp(ip) {
   const p = String(ip).split('.').map(Number);
   if (p.length !== 4 || p.some(n => !Number.isInteger(n) || n < 0 || n > 255)) return false;
@@ -297,11 +327,12 @@ function ownHostNames({ alertId, caseId }) {
   return names;
 }
 
-// Drop an IOC-lookup step that only points at an internal address or the alert's own host; when it also names external
-// indicators, rewrite it to name just those. Other steps pass through untouched. Always returns 3 to 5 steps.
+// Clean the model's next steps: drop junk (empty, very short, template placeholders) and duplicates; drop an IOC-lookup step
+// that only points at an internal address or the alert's own host, or, when it also names external indicators, rewrite it to
+// name just those. Other steps pass through untouched. Always returns 3 to 5 steps, topped up from FALLBACK_STEPS.
 function guardNextSteps(steps, hostNames = new Set()) {
   const out = [];
-  for (const step of steps) {
+  for (const step of dedupe(steps.filter(s => !isJunkStep(s)))) {
     if (!IOC_STEP.test(step)) { out.push(step); continue; }
     const ips = step.match(IPV4) || [];
     const internalIps = ips.filter(isInternalIp);
@@ -310,8 +341,10 @@ function guardNextSteps(steps, hostNames = new Set()) {
     const external = [...new Set([...ips.filter(ip => !isInternalIp(ip)), ...(step.match(SIM_DOMAIN) || []), ...(step.match(HASH) || [])])];
     if (external.length) out.push(`IOC Lookup: ${external.join(', ')}`);
   }
-  for (const f of FALLBACK_STEPS) if (out.length < 3) out.push(f);
-  return out.slice(0, 5);
+  const clean = dedupe(out); // a rewrite can repeat another step
+  const have = new Set(clean.map(stepKey));
+  for (const f of FALLBACK_STEPS) if (clean.length < 3 && !have.has(stepKey(f))) clean.push(f);
+  return clean.slice(0, 5);
 }
 
 // ---- Ollama call ----
@@ -369,4 +402,4 @@ async function triage({ alertId, caseId } = {}) {
     : { status: 'ok', label: LABEL, model: settings.model, parsed: false, raw: clip(text, MAX_RAW_CHARS) };
 }
 
-module.exports = { triage, availability, buildContext, buildMessages, parseReply, guardNextSteps, isInternalIp, setFetch, REPLY_SCHEMA, ATTACK_TACTICS, LABEL, SETUP };
+module.exports = { triage, availability, buildContext, buildMessages, parseReply, guardNextSteps, isJunkStep, isInternalIp, setFetch, REPLY_SCHEMA, ATTACK_TACTICS, LABEL, SETUP };

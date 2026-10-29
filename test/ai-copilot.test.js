@@ -10,6 +10,7 @@ process.env.SOCSIM_DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'socsim-ai-t
 const config = require('../src/config');
 const store = require('../src/store');
 const detection = require('../src/detection');
+const mitre = require('../src/mitre');
 const engine = require('../src/engine');
 const gen = require('../src/generator');
 const playbooks = require('../src/playbooks');
@@ -26,9 +27,9 @@ const GOOD = {
   nextSteps: ['Open the events in Log Search', 'Look up the source IP in IOC Lookup', 'Check related alerts for the same user'],
   draftNote: 'Brute force against the account, followed by a successful logon. Needs containment review.',
 };
-const parsed = (assessment = 'none') => ({
+const parsed = (assessment = 'none', tacticSource = 'ATT&CK map') => ({
   summary: GOOD.summary,
-  mitre: { tactic: 'Credential Access', techniqueId: 'T1110', name: 'Brute Force', assessment, source: 'model' },
+  mitre: { tactic: 'Credential Access', techniqueId: 'T1110', name: 'Brute Force', assessment, source: 'model', tacticSource },
   severity: { level: 'high', justification: GOOD.severityReason },
   nextSteps: GOOD.nextSteps,
   draftNote: GOOD.draftNote,
@@ -122,7 +123,7 @@ test('enabled: parsed result for an alert, labelled, sent only to the configured
   assert.strictEqual(r.status, 'ok');
   assert.strictEqual(r.parsed, true);
   assert.strictEqual(r.label, copilot.LABEL);
-  assert.deepStrictEqual(r.result, parsed('confirms')); // the brute force rule is tagged T1110
+  assert.deepStrictEqual(r.result, parsed('confirms', 'detection rule')); // the brute force rule is tagged T1110
   assert.strictEqual(calls.length, 1);
   const { url, opts, body } = calls[0];
   assert.strictEqual(url, 'http://127.0.0.1:11434/api/chat');
@@ -277,7 +278,7 @@ test('raw text is capped', async () => {
 test('JSON that does not fit the shape falls back to raw text', () => {
   const bad = [
     {}, [], 'text', { ...GOOD, summary: '' }, { ...GOOD, draftNote: 5 }, { ...GOOD, mitre: null },
-    { ...GOOD, mitre: { ...GOOD.mitre, techniqueId: 'banana' } }, { ...GOOD, mitre: { ...GOOD.mitre, tactic: '' } },
+    { ...GOOD, mitre: { ...GOOD.mitre, techniqueId: 'banana' } }, { ...GOOD, mitre: { ...GOOD.mitre, techniqueId: 'T1190', tactic: '' } },
     { ...GOOD, severity: 'urgent' }, { ...GOOD, severityReason: '' }, { ...GOOD, severity: undefined },
     { ...GOOD, severity: { level: 'urgent', justification: 'x' } }, { ...GOOD, severity: { level: 'high' }, severityReason: undefined },
     { ...GOOD, nextSteps: ['one', 'two'] }, { ...GOOD, nextSteps: 'do things' },
@@ -369,8 +370,57 @@ test('guard: an IOC lookup for the alert\'s own host or localhost is removed, bu
 
 test('guard: always leaves 3 to 5 steps', () => {
   assert.strictEqual(copilot.guardNextSteps(['IOC Lookup: 192.0.2.1', 'IOC Lookup: 10.0.0.1', 'IOC Lookup: 127.0.0.1']).length, 3);
-  assert.strictEqual(copilot.guardNextSteps(Array.from({ length: 5 }, (_, i) => `Step ${i}`)).length, 5);
-  assert.strictEqual(copilot.guardNextSteps(Array.from({ length: 8 }, (_, i) => `Step ${i}`)).length, 5);
+  assert.strictEqual(copilot.guardNextSteps(Array.from({ length: 5 }, (_, i) => `Check item number ${i}`)).length, 5);
+  assert.strictEqual(copilot.guardNextSteps(Array.from({ length: 8 }, (_, i) => `Check item number ${i}`)).length, 5);
+});
+
+// ---- junk next steps ----
+
+const FIRST_FALLBACK = 'Log Search: other events for the same host and user around the time of the alert';
+
+test('isJunkStep: empty, very short and template-placeholder steps are junk; real steps are not', () => {
+  for (const s of ['', '   ', 'abc', 'Log it', 'Open it', '%draftNote', ' %step', 'Check %draftNote now', '{{next_step}}', 'Do {{this}} first',
+    '<placeholder>', 'Look at <step> on the host', null, undefined, 5, {}])
+    assert.strictEqual(copilot.isJunkStep(s), true, String(s));
+  for (const s of ['Open Log Search', 'Review related alerts', 'Check domainAgeDays < 30 for the domain', '50% of the hosts are affected',
+    'Check whether 5 > 3 holds', 'IOC Lookup: 203.0.113.77'])
+    assert.strictEqual(copilot.isJunkStep(s), false, s);
+});
+
+test('guard: junk steps and duplicates are dropped, and the list is topped up with the existing fallback', () => {
+  const steps = ['Open Log Search for the user', 'open  log search for the user.', '%draftNote', '', 'x', '{{next}}', '<step>', 'Check related alerts'];
+  assert.deepStrictEqual(copilot.guardNextSteps(steps), ['Open Log Search for the user', 'Check related alerts', FIRST_FALLBACK]);
+});
+
+test('guard: nothing usable left means three fallback steps, and a fallback is never added twice', () => {
+  const none = copilot.guardNextSteps(['%a', '', 'no', '{{b}}']);
+  assert.strictEqual(none.length, 3);
+  assert.strictEqual(new Set(none.map(s => s.toLowerCase())).size, 3);
+  assert.strictEqual(none[0], FIRST_FALLBACK);
+  const withOne = copilot.guardNextSteps([FIRST_FALLBACK, '%x']);
+  assert.strictEqual(withOne.length, 3);
+  assert.strictEqual(new Set(withOne).size, 3);
+  assert.strictEqual(withOne[0], FIRST_FALLBACK);
+});
+
+test('guard: steps that become identical after an IOC rewrite are collapsed', () => {
+  const steps = ['IOC Lookup: 192.0.2.1 and 203.0.113.5', 'IOC lookup: 10.0.0.1 and 203.0.113.5', 'Check related alerts', 'Open the playbook'];
+  assert.deepStrictEqual(copilot.guardNextSteps(steps), ['IOC Lookup: 203.0.113.5', 'Check related alerts', 'Open the playbook']);
+});
+
+test('triage drops junk and duplicate steps from the model\'s reply', async () => {
+  use(reply(JSON.stringify({ ...GOOD, nextSteps: ['Open Log Search for the user', '%draftNote', 'Check related alerts', 'check related alerts',
+    'Look up 203.0.113.77 in IOC Lookup'] })));
+  const r = await copilot.triage({ alertId: alertId() });
+  assert.strictEqual(r.parsed, true);
+  assert.deepStrictEqual(r.result.nextSteps, ['Open Log Search for the user', 'Check related alerts', 'Look up 203.0.113.77 in IOC Lookup']);
+});
+
+test('triage tops up to three steps when the model gave mostly junk', async () => {
+  use(reply(JSON.stringify({ ...GOOD, nextSteps: ['Open Log Search for the user', '%draftNote', '{{step}}'] })));
+  const r = await copilot.triage({ alertId: alertId() });
+  assert.strictEqual(r.result.nextSteps.length, 3);
+  assert.deepStrictEqual(r.result.nextSteps.slice(0, 2), ['Open Log Search for the user', FIRST_FALLBACK]);
 });
 
 test('triage applies the guard: no IOC lookup for the alert\'s own host or internal addresses', async () => {
@@ -429,21 +479,60 @@ test('the prompt asks for the same keys and lists the 14 ATT&CK tactics', async 
 // ---- MITRE validation and the fallback to the rule's own mapping ----
 
 const withMitre = mitre => JSON.stringify({ ...GOOD, mitre });
-const FROM_RULE_T1110 = { tactic: 'Credential Access', techniqueId: 'T1110', name: 'Brute Force', assessment: 'rule', source: 'detection rule' };
+const FROM_RULE_T1110 = { tactic: 'Credential Access', techniqueId: 'T1110', name: 'Brute Force', assessment: 'rule', source: 'detection rule',
+  tacticSource: 'detection rule' };
+const mitreOf = (m, rule) => copilot.parseReply(withMitre(m), rule)?.mitre;
 
-test("a valid technique and tactic are kept, and judged against the rule's mapping", () => {
-  const m = (techniqueId, tactic = 'Credential Access') => copilot.parseReply(withMitre({ tactic, techniqueId, techniqueName: 'N' }), 'T1110').mitre;
-  assert.deepStrictEqual(m('T1110'), { tactic: 'Credential Access', techniqueId: 'T1110', name: 'N', assessment: 'confirms', source: 'model' });
+test("a valid technique ID is kept and judged against the rule's mapping", () => {
+  const m = (techniqueId, tactic = 'Credential Access') => mitreOf({ tactic, techniqueId, techniqueName: 'N' }, 'T1110');
+  assert.deepStrictEqual(m('T1110'), { tactic: 'Credential Access', techniqueId: 'T1110', name: 'N', assessment: 'confirms', source: 'model',
+    tacticSource: 'detection rule' });
   assert.strictEqual(m('T1110.003').assessment, 'refines');    // a sub-technique of the rule's technique
   assert.strictEqual(m('T1003').assessment, 'differs');        // a different technique
-  assert.strictEqual(m('t1003', ' impact ').tactic, 'Impact'); // case and spaces are normalised
+  assert.strictEqual(m('t1003', ' impact ').techniqueId, 'T1003'); // case and spaces are normalised
   assert.strictEqual(m(' t1003 ', ' impact ').source, 'model');
   assert.strictEqual(copilot.parseReply(withMitre(GOOD.mitre)).mitre.assessment, 'none'); // no rule mapping to compare with
 });
 
-test('all 14 ATT&CK Enterprise tactics are accepted', () => {
-  for (const tactic of copilot.ATTACK_TACTICS)
-    assert.strictEqual(copilot.parseReply(withMitre({ tactic, techniqueId: 'T1110', techniqueName: 'x' }), 'T1110').mitre.source, 'model', tactic);
+test("the model's tactic is not trusted: a technique that is the rule's (or shares its parent) gets the rule's tactic", () => {
+  const wrong = 'Reconnaissance';
+  const from = (techniqueId, rule) => mitreOf({ tactic: wrong, techniqueId, techniqueName: 'x' }, rule);
+  assert.deepStrictEqual([from('T1110', 'T1110').tactic, from('T1110', 'T1110').tacticSource], ['Credential Access', 'detection rule']);
+  assert.deepStrictEqual([from('T1566.001', 'T1566').tactic, from('T1566.001', 'T1566').tacticSource], ['Initial Access', 'detection rule']); // child of the rule's
+  assert.deepStrictEqual([from('T1110', 'T1110.003').tactic, from('T1110', 'T1110.003').tacticSource], ['Credential Access', 'detection rule']); // parent of it
+  assert.deepStrictEqual([from('T1071', ['T1003', 'T1071.004']).tactic, from('T1071', ['T1003', 'T1071.004']).tacticSource],
+    ['Command and Control', 'detection rule']);                                                              // any of the rule's tags
+});
+
+test("any other technique in the built-in ATT&CK map gets the map's tactic, whatever the model said", () => {
+  const from = (techniqueId, tactic, rule = 'T1110') => mitreOf({ tactic, techniqueId, techniqueName: 'x' }, rule);
+  for (const tactic of copilot.ATTACK_TACTICS) {
+    const m = from('T1071', tactic);
+    assert.deepStrictEqual([m.tactic, m.tacticSource, m.techniqueId, m.source], ['Command and Control', 'ATT&CK map', 'T1071', 'model'], tactic);
+  }
+  assert.strictEqual(from('T1071.004', 'Execution').tactic, 'Command and Control'); // a sub-technique uses its parent's entry
+  assert.strictEqual(from('T1003', 'not a tactic').tactic, 'Credential Access');   // an invalid model tactic no longer matters
+  assert.strictEqual(from('T1003', null).tacticSource, 'ATT&CK map');
+  assert.strictEqual(from('T1078', 'Impact', null).tactic, 'Initial Access');       // several tactics: the first listed
+  assert.strictEqual(from('T1003', 'Impact', null).tacticSource, 'ATT&CK map');     // and with no rule mapping at all
+});
+
+test("every technique the shipped rules use is in the ATT&CK map", () => {
+  const used = new Set(detection.getRules().flatMap(r => mitre.tags(r.mitre)));
+  assert.ok(used.size >= 8);
+  for (const id of used) {
+    const m = mitreOf({ tactic: 'Impact', techniqueId: id, techniqueName: 'x' }, 'T9999');
+    assert.strictEqual(m.tacticSource, 'ATT&CK map', id);
+    assert.notStrictEqual(m.tactic, 'Impact', id);
+  }
+});
+
+test('a technique that is neither the rule\'s nor in the map keeps the model\'s tactic, labelled AI-suggested', () => {
+  for (const tactic of copilot.ATTACK_TACTICS) {
+    const m = mitreOf({ tactic: ` ${tactic.toLowerCase()} `, techniqueId: 'T1190', techniqueName: 'Exploit Public-Facing Application' }, 'T1110');
+    assert.deepStrictEqual([m.tactic, m.tacticSource, m.techniqueId, m.source], [tactic, 'AI-suggested', 'T1190', 'model'], tactic);
+  }
+  assert.strictEqual(mitreOf({ tactic: 'Impact', techniqueId: 'T1190' }).tacticSource, 'AI-suggested'); // no rule mapping either
 });
 
 test('an invalid technique ID falls back to the rule\'s mapping, marked "detection rule"', () => {
@@ -453,19 +542,28 @@ test('an invalid technique ID falls back to the rule\'s mapping, marked "detecti
   }
 });
 
-test("an invalid tactic falls back to the rule's mapping, and the model's technique is dropped with it", () => {
+test("an invalid tactic no longer matters when the technique is known: the technique is kept and the tactic derived", () => {
   for (const tactic of ['T1110', 'Brute Force', 'OS Credential Dumping', 'Hacking', 'Command & Control', '', null, 7]) {
-    const p = copilot.parseReply(withMitre({ tactic, techniqueId: 'T1003', techniqueName: 'OS Credential Dumping' }), 'T1110');
-    assert.deepStrictEqual(p.mitre, FROM_RULE_T1110, String(tactic));
+    const m = mitreOf({ tactic, techniqueId: 'T1003', techniqueName: 'OS Credential Dumping' }, 'T1110');
+    assert.deepStrictEqual(m, { tactic: 'Credential Access', techniqueId: 'T1003', name: 'OS Credential Dumping', assessment: 'differs',
+      source: 'model', tacticSource: 'ATT&CK map' }, String(tactic));
   }
+});
+
+test("an unknown technique with no valid tactic of its own falls back to the rule's mapping", () => {
+  for (const tactic of ['nope', '', null, 7])
+    assert.deepStrictEqual(mitreOf({ tactic, techniqueId: 'T1190', techniqueName: 'x' }, 'T1110'), FROM_RULE_T1110, String(tactic));
+  assert.strictEqual(mitreOf({ tactic: 'nope', techniqueId: 'T1190', techniqueName: 'x' }, 'T9999'), undefined); // nothing to fall back to
 });
 
 test("the fallback uses the rule's own technique name and first tactic", () => {
   const bad = { tactic: 'nope', techniqueId: 'nope', techniqueName: 'x' };
   assert.deepStrictEqual(copilot.parseReply(withMitre(bad), 'T1071.004').mitre,
-    { tactic: 'Command and Control', techniqueId: 'T1071.004', name: 'Application Layer Protocol: DNS', assessment: 'rule', source: 'detection rule' });
+    { tactic: 'Command and Control', techniqueId: 'T1071.004', name: 'Application Layer Protocol: DNS', assessment: 'rule', source: 'detection rule',
+      tacticSource: 'detection rule' });
   assert.deepStrictEqual(copilot.parseReply(withMitre(bad), ['t1078', 'T1110']).mitre,
-    { tactic: 'Initial Access', techniqueId: 'T1078', name: 'Valid Accounts', assessment: 'rule', source: 'detection rule' });
+    { tactic: 'Initial Access', techniqueId: 'T1078', name: 'Valid Accounts', assessment: 'rule', source: 'detection rule',
+      tacticSource: 'detection rule' });
 });
 
 test('an invalid mapping with no usable rule mapping to fall back to is not parsed', () => {
@@ -486,6 +584,21 @@ test("triage: a good MITRE answer is kept and marked as the model's", async () =
   const r = await copilot.triage({ alertId: alertId() });
   assert.strictEqual(r.result.mitre.source, 'model');
   assert.strictEqual(r.result.mitre.assessment, 'confirms');
+  assert.strictEqual(r.result.mitre.tacticSource, 'detection rule');
+});
+
+test("triage: a wrong tactic from the model is replaced by the one derived from the rule's technique", async () => {
+  use(reply(withMitre({ tactic: 'Lateral Movement', techniqueId: 'T1110', techniqueName: 'Brute Force' })));
+  const r = await copilot.triage({ alertId: alertId() });
+  assert.deepStrictEqual([r.result.mitre.tactic, r.result.mitre.tacticSource, r.result.mitre.techniqueId],
+    ['Credential Access', 'detection rule', 'T1110']);
+});
+
+test('triage: a technique other than the rule\'s gets its tactic from the ATT&CK map', async () => {
+  use(reply(withMitre({ tactic: 'Execution', techniqueId: 'T1071', techniqueName: 'Application Layer Protocol' })));
+  const r = await copilot.triage({ alertId: alertId() }); // a T1110 alert
+  assert.deepStrictEqual([r.result.mitre.tactic, r.result.mitre.tacticSource, r.result.mitre.assessment],
+    ['Command and Control', 'ATT&CK map', 'differs']);
 });
 
 test("triage for a case falls back to the mapping of the case's most severe alert", async () => {
@@ -497,5 +610,6 @@ test("triage for a case falls back to the mapping of the case's most severe aler
   use(reply(withMitre({ tactic: 'nope', techniqueId: 'nope', techniqueName: 'x' })));
   const r = await copilot.triage({ caseId: c.id });
   assert.deepStrictEqual(r.result.mitre,
-    { tactic: 'Credential Access', techniqueId: 'T1003', name: 'OS Credential Dumping', assessment: 'rule', source: 'detection rule' });
+    { tactic: 'Credential Access', techniqueId: 'T1003', name: 'OS Credential Dumping', assessment: 'rule', source: 'detection rule',
+      tacticSource: 'detection rule' });
 });
