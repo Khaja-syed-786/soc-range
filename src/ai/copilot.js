@@ -134,7 +134,23 @@ Reply with ONE JSON object and nothing else, with exactly these keys:
  "draftNote": "an incident note the analyst can paste into the case: what was seen, why it matters, what to check"}
 nextSteps may only use what this simulator offers: Log Search (by host, user, event ID, source, keyword), IOC Lookup
 (simulated IPs, *.example domains, hashes), the related alerts and the playbook on the alert, and the case timeline.
-Never suggest tools or data that do not exist here. Say plainly if the evidence is too thin to be sure.`;
+Never suggest tools or data that do not exist here. Say plainly if the evidence is too thin to be sure.
+
+How to read the data:
+- In an event, srcIp is the machine that started the connection or logon (normally the alert's own entity) and dstIp is where it
+  went. Only suggest an IOC Lookup for an address you can see is external or for a dstIp, never for the entity's own srcIp.
+- Only indicators with onThreatIntelList true are known bad. An address or domain that is on no list is unproven, not malicious.
+  A newly registered domain (domainAgeDays) is weak evidence on its own.
+- logonType 2 is a person at the keyboard, 3 is over the network, 10 is Remote Desktop. A few failed logons at logonType 2 on
+  one workstation for one user, with reason "Bad password" and no success from elsewhere, is usually a mistyped password.
+- For a detection on a program, look at signer, user and host. A signed program from a known vendor running under a service
+  account on the server it belongs to is often a false positive; an unsigned or unknown tool is not.
+- Do not just copy the rule's severity. Use high or critical only when the evidence is corroborated (intel hit, unknown tool,
+  several hosts or users). If the evidence fits an innocent explanation, say so in the summary and draftNote, rate it low or
+  medium, and make one nextStep the check that would confirm the innocent explanation.
+- Say "possible" or "suspected" unless the data proves it. Never state that something is malware or a phishing site as fact.
+- mitre.tactic must be an ATT&CK tactic name (for example Initial Access, Execution, Persistence, Credential Access, Discovery,
+  Lateral Movement, Command and Control), not a technique name and not an ID.`;
 
 function buildMessages(contextJson) {
   const known = mitre.catalogue().map(t => `${t.id} ${t.name}`).join('; ');
