@@ -12,6 +12,7 @@ const store = require('../src/store');
 const detection = require('../src/detection');
 const mitre = require('../src/mitre');
 const ioc = require('../src/ioc');
+const intel = require('../src/intel');
 const engine = require('../src/engine');
 const gen = require('../src/generator');
 const playbooks = require('../src/playbooks');
@@ -514,8 +515,12 @@ test('verified facts: a domain and a hash on the intel list are found too', asyn
   const domain = eventOf(d).domain;
   assert.ok(domain.endsWith('.example'));
   assert.deepStrictEqual((await copilot.triage({ alertId: d.id })).verified.facts, [factFor(domain)]);
-  const h = alertFor('cred_dump', 'R007');
+  // cred_dump uses a listed hash only 70% of the time, so pin one that is on the list
+  gen.expand('cred_dump', Date.now()).map(e => ({ ...e, fileHash: intel.badHashes[0].value })).forEach(engine.ingest);
+  const h = store.state.alerts.find(a => a.ruleId === 'R007');
+  assert.ok(h);
   const hash = eventOf(h).fileHash;
+  assert.strictEqual(hash, intel.badHashes[0].value);
   const r = await copilot.triage({ alertId: h.id });
   assert.deepStrictEqual(r.verified.facts, [factFor(hash)]);
   assert.strictEqual(r.verified.intel[0].type, 'hash');
