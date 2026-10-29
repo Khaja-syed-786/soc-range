@@ -4,5 +4,6 @@
   "eventCap": 50000,
   "saveIntervalSeconds": 30,
   "defaultRate": 1,
-  "scenarioEveryMinutes": 4
+  "scenarioEveryMinutes": 4,
+  "aiCopilot": { "enabled": false, "ollamaUrl": "http://127.0.0.1:11434", "model": "llama3.2", "timeoutMs": 60000 }
 }

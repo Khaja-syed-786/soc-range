@@ -9,6 +9,7 @@
 | [Incident cases and playbooks](incident-cases-and-playbooks.md) | Alerts vs. cases, the NIST lifecycle, editable playbooks |
 | [MITRE ATT&CK and IOC lookup](mitre-and-ioc.md) | Coverage and activity heatmaps, IOC pivoting, the editable intel list |
 | [Exercises and shift handover](exercises-and-handover.md) | Scored scenario mode, answer keys, MTTA/MTTR, the handover report |
+| [AI Triage Copilot](ai-copilot.md) | Optional local-Ollama helper: setup, what it sends, privacy, exercise lockout |
 | [Advanced detections](advanced-detections.md) | Phishing, password spraying, lateral movement, beacon behaviour and logons from the internet |
 | [Architecture](architecture.md) | Data flow, project layout, saved state, development history |
 | [CI/CD pipeline](ci-cd.md) | Every gate and why it exists, measured run times, suppressions, known gaps, verifying a release |

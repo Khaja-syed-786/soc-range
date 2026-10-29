@@ -16,6 +16,7 @@ const mitre = require('./src/mitre');
 const ioc = require('./src/ioc');
 const exercise = require('./src/exercise');
 const handover = require('./src/handover');
+const copilot = require('./src/ai/copilot');
 
 const app = express();
 app.use(express.json({ limit: '1mb' }));
@@ -50,6 +51,7 @@ app.get('/api/meta', wrap(() => ({
   exerciseMinutes: exercise.scoring().timeLimitsMinutes,
   exerciseDefaultMinutes: exercise.scoring().defaultMinutes,
   exerciseCriteria: exercise.CRITERIA.map(key => ({ key, label: exercise.LABELS[key] })),
+  aiCopilot: { enabled: config.aiCopilot.enabled, allowInExercises: config.aiCopilot.allowInExercises },
 })));
 
 app.get('/api/stats', wrap(() => alerts.stats()));
@@ -120,6 +122,12 @@ app.get('/api/handovers', wrap(() => handover.list()));
 app.get('/api/handovers/:id', wrap(req => handover.get(Number(req.params.id))));
 app.post('/api/handovers', wrap(req => handover.save(req.body || {})));
 app.put('/api/handover/draft', wrap(req => handover.saveDraft((req.body || {}).notes)));
+
+// AI Triage Copilot (optional, local Ollama only). Suggestions are returned, never saved.
+app.post('/api/ai/triage', async (req, res) => {
+  try { res.json(await copilot.triage(req.body || {})); }
+  catch (e) { res.status(e.status || 500).json({ error: e.message }); }
+});
 
 app.get('/api/events', wrap(req => {
   const q = req.query;

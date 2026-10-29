@@ -31,9 +31,10 @@ src/mitre.js         ATT&CK catalogue, coverage + activity heatmap
 src/ioc.js           indicator classification and lookup
 src/exercise.js      scored scenario mode
 src/handover.js      shift handover report
+src/ai/copilot.js    optional AI Triage Copilot (local Ollama, loopback only)
 rules/*.json         rules, playbooks, threat intel, scoring weights
 public/              UI (vanilla JS, no CDN)
-test/                node:test tests (110)
+test/                node:test tests (141)
 ```
 
 ## Saved state

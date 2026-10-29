@@ -5,7 +5,7 @@
 SOC Simulator is a **training simulator**. Every log, user, host, IP address, domain, file hash and attack in it is
 simulated: IPs come only from the documentation ranges (`192.0.2.0/24`, `198.51.100.0/24`, `203.0.113.0/24`),
 domains end in `.example`, and the lookups refuse real-looking values. It contains no real malware or attack
-tooling, reads no real logs and makes no outbound network calls. It is meant to run on your own PC, listening on
+tooling, reads no real logs and makes no outbound network calls. (The optional, off-by-default AI Copilot talks only to an Ollama on this same PC: its address must be a loopback address or the server refuses to start.) It is meant to run on your own PC, listening on
 `127.0.0.1` only, and it has no login.
 
 Rate limiting is deliberately not implemented: the server binds to `127.0.0.1` only and is a single-user local
