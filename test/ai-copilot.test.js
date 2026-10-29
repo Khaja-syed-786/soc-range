@@ -11,6 +11,7 @@ const config = require('../src/config');
 const store = require('../src/store');
 const detection = require('../src/detection');
 const mitre = require('../src/mitre');
+const ioc = require('../src/ioc');
 const engine = require('../src/engine');
 const gen = require('../src/generator');
 const playbooks = require('../src/playbooks');
@@ -421,6 +422,199 @@ test('triage tops up to three steps when the model gave mostly junk', async () =
   const r = await copilot.triage({ alertId: alertId() });
   assert.strictEqual(r.result.nextSteps.length, 3);
   assert.deepStrictEqual(r.result.nextSteps.slice(0, 2), ['Open Log Search for the user', FIRST_FALLBACK]);
+});
+
+// ---- the model's text is untrusted: nothing may backtrack on it (CodeQL js/polynomial-redos) ----
+
+const within = (ms, fn) => {
+  const t0 = Date.now();
+  const out = fn();
+  const took = Date.now() - t0;
+  assert.ok(took < ms, `took ${took} ms`);
+  return out;
+};
+const HUGE = 300000;
+
+test('stripFences removes a code fence and nothing else', () => {
+  assert.strictEqual(copilot.stripFences('```json\n{"a":1}\n```'), '{"a":1}');
+  assert.strictEqual(copilot.stripFences('```\n{"a":1}\n```'), '{"a":1}');
+  assert.strictEqual(copilot.stripFences('  ```json {"a":1}```  '), '{"a":1}');
+  assert.strictEqual(copilot.stripFences('  {"a":1}  \n'), '{"a":1}');
+  assert.strictEqual(copilot.stripFences('```'), '');
+  assert.strictEqual(copilot.stripFences('```json'), '');
+  assert.strictEqual(copilot.stripFences('text ``` more'), 'text ``` more');
+  assert.strictEqual(copilot.stripFences('```JSON\n{}\n```'), 'JSON\n{}'); // only a lower-case "json" is a language tag
+  assert.strictEqual(copilot.stripFences(null), '');
+  assert.strictEqual(copilot.stripFences(undefined), '');
+});
+
+test('jsonSpan runs from the first { to the last }', () => {
+  assert.strictEqual(copilot.jsonSpan('Sure! {"a":{"b":1}} Hope it helps'), '{"a":{"b":1}}');
+  assert.strictEqual(copilot.jsonSpan('{{a}}'), '{{a}}');
+  for (const t of ['no braces', '', '} {', '{', '}', '}{']) assert.strictEqual(copilot.jsonSpan(t), null, t);
+});
+
+test('stepKey ignores case, spacing and trailing punctuation only', () => {
+  assert.strictEqual(copilot.stepKey('  Check   Related ALERTS. '), 'check related alerts');
+  assert.strictEqual(copilot.stepKey('Check alerts ; , !'), 'check alerts');
+  assert.strictEqual(copilot.stepKey('a.b.c'), 'a.b.c');
+  assert.strictEqual(copilot.stepKey('...'), '');
+});
+
+test('huge replies are handled in linear time', () => {
+  const ws = ' '.repeat(HUGE);
+  for (const text of [ws + 'x', '```' + ws, ws + '```', '```json' + ws + '```', '{'.repeat(HUGE), '{'.repeat(HUGE) + '}'.repeat(10),
+    '}'.repeat(HUGE), '`'.repeat(HUGE), 'a'.repeat(HUGE), '\n'.repeat(HUGE)])
+    assert.strictEqual(within(2000, () => copilot.parseReply(text)), null, text.slice(0, 12));
+  // a valid reply inside a fence with a lot of whitespace around it still parses
+  const big = within(2000, () => copilot.parseReply('```json' + ws + JSON.stringify(GOOD) + ws + '```'));
+  assert.strictEqual(big.summary, GOOD.summary);
+  assert.strictEqual(within(2000, () => copilot.stripFences(ws + '```json' + ws + '{}' + ws + '```' + ws)), '{}');
+});
+
+test('huge steps and claims are handled in linear time', () => {
+  const punct = '. ; , ! '.repeat(HUGE / 8);
+  const first = 'Check the related alerts' + punct, open = '<' + 'a'.repeat(HUGE), braces = '{{'.repeat(HUGE / 2);
+  const steps = within(2000, () => copilot.guardNextSteps([first, 'check the related alerts', 'Open the playbook', open, braces, '%' + 'x'.repeat(HUGE)]));
+  // the repeat is dropped, the % one is a placeholder; an unclosed < or {{ is just text, however long
+  assert.deepStrictEqual(steps, [first, 'Open the playbook', open, braces]);
+  const hit = [{ type: 'ip', value: '203.0.113.66', note: '' }];
+  const found = within(2000, () => copilot.findContradictions({ summary: 'ok. '.repeat(HUGE / 4) + 'This is a false positive' }, hit));
+  assert.deepStrictEqual(found, [{ field: 'summary', claim: 'false positive' }]);
+  within(2000, () => copilot.findContradictions({ summary: 'a.'.repeat(HUGE / 2), draftNote: '1.2.3.4 '.repeat(HUGE / 8) }, hit));
+});
+
+// ---- verified intel facts ----
+// Scenarios whose alerts have an indicator that is on the simulator's intel list (c2_beacon: an IP and a domain; cred_dump: a hash),
+// and ones that do not (backup_agent_edr, user_typos).
+
+function alertFor(scenario, ruleId) {
+  gen.expand(scenario, Date.now()).forEach(engine.ingest);
+  const a = store.state.alerts.find(x => x.ruleId === ruleId);
+  assert.ok(a, `${scenario} -> ${ruleId}`);
+  return a;
+}
+const eventOf = a => store.state.events.find(e => e.id === a.relatedEventIds[0]);
+const factFor = value => `Verified: ${value} is on the threat-intel list (${ioc.lookup(value).intel.note})`;
+const answer = over => use(reply(JSON.stringify({ ...GOOD, ...over })));
+
+test('verified facts: an IP on the intel list is stated with the list\'s own note', async () => {
+  const a = alertFor('c2_beacon', 'R005');
+  const ip = eventOf(a).dstIp;
+  const r = await copilot.triage({ alertId: a.id });
+  assert.deepStrictEqual(r.verified.facts, [factFor(ip)]);
+  assert.match(r.verified.facts[0], /^Verified: 203\.0\.113\.\d+ is on the threat-intel list \(.+\)$/);
+  assert.deepStrictEqual(r.verified.intel, [{ type: 'ip', value: ip, note: ioc.lookup(ip).intel.note }]);
+  assert.strictEqual(r.verified.warning, null);
+  assert.deepStrictEqual(r.verified.contradictions, []);
+});
+
+test('verified facts: a domain and a hash on the intel list are found too', async () => {
+  const d = alertFor('c2_beacon', 'R006');
+  const domain = eventOf(d).domain;
+  assert.ok(domain.endsWith('.example'));
+  assert.deepStrictEqual((await copilot.triage({ alertId: d.id })).verified.facts, [factFor(domain)]);
+  const h = alertFor('cred_dump', 'R007');
+  const hash = eventOf(h).fileHash;
+  const r = await copilot.triage({ alertId: h.id });
+  assert.deepStrictEqual(r.verified.facts, [factFor(hash)]);
+  assert.strictEqual(r.verified.intel[0].type, 'hash');
+});
+
+test('verified facts: the AI is not asked, and the lookup is read-only', async () => {
+  const a = alertFor('c2_beacon', 'R005');
+  const before = JSON.stringify(store.state.alerts);
+  use(reply(JSON.stringify(GOOD)));
+  await copilot.triage({ alertId: a.id });
+  assert.strictEqual(JSON.stringify(store.state.alerts), before);
+  assert.ok(!calls[0].body.messages.some(m => m.content.includes('Verified:')));
+});
+
+test('an indicator on the intel list raises severity to at least high', async () => {
+  const a = alertFor('c2_beacon', 'R005');
+  for (const level of ['low', 'medium']) {
+    answer({ severity: level });
+    const r = await copilot.triage({ alertId: a.id });
+    assert.deepStrictEqual([r.result.severity.level, r.result.severity.raisedFrom], ['high', level], level);
+    assert.strictEqual(r.result.severity.justification, GOOD.severityReason); // the AI's own reason is kept
+  }
+  answer({ severity: 'high' });
+  assert.deepStrictEqual((await copilot.triage({ alertId: a.id })).result.severity, { level: 'high', justification: GOOD.severityReason });
+  answer({ severity: 'critical' });
+  assert.deepStrictEqual((await copilot.triage({ alertId: a.id })).result.severity, { level: 'critical', justification: GOOD.severityReason });
+});
+
+test('no indicator on the intel list: no facts, no warning, severity untouched, even if the AI says false positive', async () => {
+  for (const [scenario, rule] of [['backup_agent_edr', 'R007'], ['user_typos', 'R001']]) {
+    store.reset(); detection.loadRules(); playbooks.load();
+    const a = alertFor(scenario, rule);
+    answer({ severity: 'low', summary: 'This is a false positive.', draftNote: 'The hash is not on any threat intel list, so a false positive.' });
+    const r = await copilot.triage({ alertId: a.id });
+    assert.deepStrictEqual(r.verified, { facts: [], intel: [], warning: null, contradictions: [] }, scenario);
+    assert.deepStrictEqual(r.result.severity, { level: 'low', justification: GOOD.severityReason }, scenario);
+  }
+});
+
+test('the AI saying false positive, or not on the list, is flagged when an indicator IS on the list', async () => {
+  const a = alertFor('c2_beacon', 'R005');
+  const W = copilot.CONTRADICTION_WARNING;
+  assert.strictEqual(W, 'AI claim contradicts verified intel. Trust the verified facts.');
+  answer({ summary: 'This is likely a false positive.' });
+  let r = await copilot.triage({ alertId: a.id });
+  assert.strictEqual(r.verified.warning, W);
+  assert.deepStrictEqual(r.verified.contradictions, [{ field: 'summary', claim: 'false positive' }]);
+  assert.strictEqual(r.verified.facts.length, 1);
+  answer({ severityReason: 'The IP address is not on the threat-intel list.' });
+  r = await copilot.triage({ alertId: a.id });
+  assert.deepStrictEqual(r.verified.contradictions, [{ field: 'severityReason', claim: 'not on the intel list' }]);
+  answer({ draftNote: 'Not listed in any intel feed. Probably a false-positive.' });
+  r = await copilot.triage({ alertId: a.id });
+  assert.deepStrictEqual(r.verified.contradictions, [{ field: 'draftNote', claim: 'not on the intel list' }, { field: 'draftNote', claim: 'false positive' }]);
+  answer({});
+  r = await copilot.triage({ alertId: a.id });
+  assert.strictEqual(r.verified.warning, null); // a reply that agrees with the intel list gets no warning
+});
+
+test('findContradictions: what counts and what does not', () => {
+  const hit = [{ type: 'ip', value: '203.0.113.66', note: 'x' }];
+  const flagged = text => copilot.findContradictions({ f: text }, hit).map(c => c.claim);
+  for (const t of ['This is a false positive.', 'Likely a False-Positive', 'The IP is not on the threat-intel list.', 'Not on any threat intel list',
+    'It is not listed in the intel feed', 'The address is on no intel list.', 'The IP 203.0.113.66 is not on the threat-intel list.',
+    'The domain is not in the intel list'])
+    assert.ok(flagged(t).length > 0, t);
+  for (const t of ['It is unlikely to be a false positive.', 'This is not a false positive.', 'A false positive is ruled out.', 'We can rule out a false positive.',
+    'The IP is on the threat-intel list.', 'The IP 203.0.113.229 is not on any threat intel list.', 'No additional intel is needed.',
+    'There is no further intel on the source.', 'Nothing here is not on the radar.', '', 'a'.repeat(50)])
+    assert.deepStrictEqual(flagged(t), [], t);
+  assert.deepStrictEqual(copilot.findContradictions({ f: 'This is a false positive.' }, []), []); // nothing on the list, nothing to contradict
+  // a sentence naming an off-list indicator is not about the listed one, but one that names the listed one is
+  assert.deepStrictEqual(flagged('203.0.113.229 is not on the intel list. 203.0.113.66 is not on the intel list.'), ['not on the intel list']);
+  assert.deepStrictEqual(flagged('The IP 203.0.113.66 was seen. It is not on the threat-intel list.'), ['not on the intel list']);
+});
+
+test('an unparsed reply still gets the verified facts, and its raw text is checked', async () => {
+  const a = alertFor('c2_beacon', 'R005');
+  use(reply('Probably a false positive, nothing to see here.'));
+  const r = await copilot.triage({ alertId: a.id });
+  assert.strictEqual(r.parsed, false);
+  assert.strictEqual(r.verified.facts.length, 1);
+  assert.strictEqual(r.verified.warning, copilot.CONTRADICTION_WARNING);
+  assert.deepStrictEqual(r.verified.contradictions, [{ field: 'raw', claim: 'false positive' }]);
+});
+
+test('for a case, every alert\'s indicators are checked and severity is raised', async () => {
+  const bad = alertFor('c2_beacon', 'R005');
+  const quiet = alertFor('user_typos', 'R001');
+  const c = cases.create({ alertIds: [quiet.id, bad.id] });
+  answer({ severity: 'low' });
+  const r = await copilot.triage({ caseId: c.id });
+  assert.deepStrictEqual(r.verified.facts, [factFor(eventOf(bad).dstIp)]);
+  assert.deepStrictEqual([r.result.severity.level, r.result.severity.raisedFrom], ['high', 'low']);
+});
+
+test('triage answers that are not an AI result carry no verified facts', async () => {
+  config.aiCopilot.enabled = false;
+  assert.strictEqual((await copilot.triage({ alertId: alertFor('c2_beacon', 'R005').id })).verified, undefined);
 });
 
 test('triage applies the guard: no IOC lookup for the alert\'s own host or internal addresses', async () => {

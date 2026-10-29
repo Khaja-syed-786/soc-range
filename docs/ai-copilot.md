@@ -5,11 +5,13 @@
 An optional helper for the analyst console. On any alert, and on any incident case, **Ask AI Copilot** gives you:
 
 1. A plain-English summary of what happened
-2. A MITRE ATT&CK mapping (tactic and technique ID), saying whether it confirms, refines or differs from the rule's mapping. The model's technique ID is checked, and its tactic is not trusted: the tactic comes from the rule when the technique is the rule's own (or shares its parent), otherwise from a built-in ATT&CK map, and only as a last resort from the model, labelled "AI-suggested". If the technique ID is not valid, the rule's own mapping is shown instead and marked "from detection rule". Next steps that are empty, too short, template placeholders or duplicates are dropped
-3. A severity assessment with a short justification
+2. A MITRE ATT&CK mapping (tactic and technique ID), saying whether it confirms, refines or differs from the rule's mapping. The model's technique ID is checked, and its tactic is not trusted: the tactic comes from the rule when the technique is the rule's own (or shares its parent), otherwise from a built-in ATT&CK map, and only as a last resort from the model, labelled "AI-suggested". If the technique ID is not valid, the rule's own mapping is shown instead and marked "from detection rule"
+3. A severity assessment with a short justification. If any indicator in the alert (IP, hash or domain) is on the simulator's intel list, the severity is at least high
 4. 3-5 suggested next investigation steps, limited to what exists in the simulator: Log Search, IOC Lookup, related
-   alerts, the alert's playbook and the case timeline
+   alerts, the alert's playbook and the case timeline. Steps that are empty, too short, template placeholders or duplicates are dropped
 5. A draft incident note you can edit and paste into the case
+
+Above the AI's answer you also get **Verified facts**: the server looks up every indicator in the alert in its own intel list and states what it found, for example "Verified: 203.0.113.77 is on the threat-intel list (Fake brute-force source (training))". These lines are not written by the AI. If the AI says "false positive", or says an indicator is not on the intel list, while one is, a warning tells you to trust the verified facts.
 
 Every answer is labelled **AI suggestion: verify before acting**. It is a second opinion from a small local model,
 not an answer key. Small models get things wrong, so check each claim against the events.

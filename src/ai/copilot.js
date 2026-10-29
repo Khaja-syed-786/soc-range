@@ -7,6 +7,7 @@ const store = require('../store');
 const detection = require('../detection');
 const mitre = require('../mitre');
 const ioc = require('../ioc');
+const intel = require('../intel');
 const company = require('../company');
 const exercise = require('../exercise');
 const { SEV_RANK } = require('../alerts');
@@ -243,15 +244,35 @@ function checkMitre(m, ruleMitre) {
     tacticSource: 'detection rule' } : null;
 }
 
+// The model's text is untrusted and can be huge, so none of this uses a regex that could backtrack on it.
+
+// Remove a Markdown code fence around the reply: an opening ``` (with an optional "json") and a closing ```
+function stripFences(text) {
+  let t = String(text ?? '').trim();
+  if (t.startsWith('```')) {
+    t = t.slice(3);
+    if (t.startsWith('json')) t = t.slice(4);
+    t = t.trimStart();
+  }
+  if (t.endsWith('```')) t = t.slice(0, -3).trimEnd();
+  return t;
+}
+
+// From the first "{" to the last "}", or null when there is no such span
+function jsonSpan(text) {
+  const a = text.indexOf('{'), b = text.lastIndexOf('}');
+  return a >= 0 && b > a ? text.slice(a, b + 1) : null;
+}
+
 // Parse the model's text into the strict shape, or return null when it does not fit.
 // ruleMitre is the alert's own MITRE tag(s), used to judge and, if needed, replace the model's mapping.
 function parseReply(text, ruleMitre) {
   let obj;
-  const body = String(text || '').trim().replace(/^```(?:json)?\s*|\s*```$/g, '');
+  const body = stripFences(text || '');
   try { obj = JSON.parse(body); } catch {
-    const m = body.match(/\{[\s\S]*\}/);
-    if (!m) return null;
-    try { obj = JSON.parse(m[0]); } catch { return null; }
+    const span = jsonSpan(body);
+    if (!span) return null;
+    try { obj = JSON.parse(span); } catch { return null; }
   }
   if (!obj || typeof obj !== 'object') return null;
   const { summary, mitre: m, severity, severityReason, nextSteps, draftNote } = obj;
@@ -281,7 +302,7 @@ function parseReply(text, ruleMitre) {
 const IPV4 = /\b(?:\d{1,3}\.){3}\d{1,3}\b/g;
 const IOC_STEP = /\b(?:ioc|threat[- ]?intel(?:ligence)?|intel (?:list|feed)|reputation)\b/i;
 const LOCAL_WORD = /\blocalhost\b|::1/i;
-const SIM_DOMAIN = /\b(?:[a-z0-9-]+\.)+example\b/gi;
+const SIM_DOMAIN = /\b(?:[a-z0-9-]{1,63}\.){1,10}example\b/gi;
 const HASH = /\b[0-9a-f]{64}\b/gi;
 const FALLBACK_STEPS = [
   'Log Search: other events for the same host and user around the time of the alert',
@@ -291,9 +312,15 @@ const FALLBACK_STEPS = [
 
 // A next step that is empty, too short to mean anything, or a leftover template placeholder (%name, {{name}}, <name>)
 const MIN_STEP_CHARS = 8;
-const PLACEHOLDER = /^\s*%|%[A-Za-z_]\w*|\{\{[^}]*\}\}|<[^<>\s][^<>]*>/;
-const isJunkStep = s => typeof s !== 'string' || s.trim().length < MIN_STEP_CHARS || PLACEHOLDER.test(s);
-const stepKey = s => s.toLowerCase().replace(/\s+/g, ' ').replace(/[\s.;:,!]+$/, '').trim();
+const PLACEHOLDER = /%[A-Za-z_]|\{\{[^}]{0,200}\}\}|<[^<>\s][^<>]{0,200}>/;
+const isJunkStep = s => typeof s !== 'string' || s.trim().length < MIN_STEP_CHARS || s.trimStart().startsWith('%') || PLACEHOLDER.test(s);
+// Case, spacing and trailing punctuation do not make a step different
+function stepKey(s) {
+  const t = s.toLowerCase().replace(/\s+/g, ' ').trim();
+  let end = t.length;
+  while (end > 0 && ' .;:,!'.includes(t[end - 1])) end--;
+  return t.slice(0, end);
+}
 const dedupe = steps => { const seen = new Set(); return steps.filter(s => { const k = stepKey(s); return !seen.has(k) && seen.add(k); }); };
 
 function isInternalIp(ip) {
@@ -312,10 +339,15 @@ function ruleMitreFor({ alertId, caseId }) {
   return top?.mitre;
 }
 
+// The alert, or all the alerts of the case, a triage is about
+function alertsFor({ alertId, caseId }) {
+  return alertId !== undefined ? store.state.alerts.filter(a => a.id === alertId)
+    : (store.state.cases.find(c => c.id === caseId)?.alertIds || []).map(i => store.state.alerts.find(a => a.id === i)).filter(Boolean);
+}
+
 // Lower-case names of the machines this alert (or case) is about
 function ownHostNames({ alertId, caseId }) {
-  const alerts = alertId !== undefined ? store.state.alerts.filter(a => a.id === alertId)
-    : (store.state.cases.find(c => c.id === caseId)?.alertIds || []).map(i => store.state.alerts.find(a => a.id === i)).filter(Boolean);
+  const alerts = alertsFor({ alertId, caseId });
   const known = new Set(company.hosts.map(h => h.name.toLowerCase()));
   const names = new Set();
   const ids = new Set();
@@ -345,6 +377,68 @@ function guardNextSteps(steps, hostNames = new Set()) {
   const have = new Set(clean.map(stepKey));
   for (const f of FALLBACK_STEPS) if (clean.length < 3 && !have.has(stepKey(f))) clean.push(f);
   return clean.slice(0, 5);
+}
+
+// ---- verified intel facts: checked by the server against the simulator's own intel list, never by the model ----
+
+const CONTRADICTION_WARNING = 'AI claim contradicts verified intel. Trust the verified facts.';
+const NOT_ON_LIST = ['not on', 'not in', "isn't on", "isn't in", 'is not listed', 'not listed', 'no intel', 'on no ', 'not found on', 'not present on'];
+const FALSE_POSITIVE_DENIED = ['not a false positive', 'not likely a false positive', 'not be a false positive', "isn't a false positive",
+  'unlikely', 'rule out', 'ruled out'];
+
+// Every indicator (IP, hash, domain) in the alert's, or the case's, events that IS on the intel list, with the list's note
+function intelHits(ref) {
+  const ids = new Set(alertsFor(ref).flatMap(a => a.relatedEventIds));
+  const events = store.state.events.filter(e => ids.has(e.id));
+  return ioc.extract(events).filter(x => x.onIntel).map(x => ({ type: x.type, value: x.value, note: intel.lookup(x.value)?.note || '' }));
+}
+
+const intelFact = h => `Verified: ${h.value} is on the threat-intel list${h.note ? ` (${h.note})` : ''}`;
+
+// Split on . ! ? (when followed by a space or the end) and on newlines, so an IP's dots do not end a sentence
+function sentences(text) {
+  const out = [];
+  let start = 0;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    const endsHere = c === '\n' || ((c === '.' || c === '!' || c === '?') && (i + 1 === text.length || /\s/.test(text[i + 1])));
+    if (endsHere) { out.push(text.slice(start, i + 1)); start = i + 1; }
+  }
+  if (start < text.length) out.push(text.slice(start));
+  return out;
+}
+
+// Where the AI text says "false positive", or that an indicator is not on the intel list, although one IS on it.
+// A "not on the list" sentence only counts when it names no indicator, or names one that is on the list.
+// -> [{ field, claim }], at most one per field and claim
+function findContradictions(fields, hits) {
+  if (!hits.length) return [];
+  const listed = new Set(hits.map(h => h.value.toLowerCase()));
+  const out = [];
+  const add = (field, claim) => { if (!out.some(o => o.field === field && o.claim === claim)) out.push({ field, claim }); };
+  for (const [field, text] of Object.entries(fields)) {
+    for (const sentence of sentences(String(text ?? ''))) {
+      const s = sentence.toLowerCase();
+      if ((s.includes('false positive') || s.includes('false-positive')) && !FALSE_POSITIVE_DENIED.some(n => s.includes(n))) add(field, 'false positive');
+      const named = [...(s.match(IPV4) || []), ...(s.match(HASH) || []), ...(s.match(SIM_DOMAIN) || [])];
+      const aboutListed = !named.length || named.some(v => listed.has(v));
+      if (aboutListed && s.includes('intel') && NOT_ON_LIST.some(n => s.includes(n))) add(field, 'not on the intel list');
+    }
+  }
+  return out;
+}
+
+// What goes to the analyst above the AI output, plus whether the AI contradicts it
+function verify(hits, fields) {
+  const contradictions = findContradictions(fields, hits);
+  return { facts: hits.map(intelFact), intel: hits, warning: contradictions.length ? CONTRADICTION_WARNING : null, contradictions };
+}
+
+// A verified intel hit means at least high, whatever the model said
+function raiseSeverity(result, hits) {
+  if (!hits.length || SEV_RANK[result.severity.level] >= SEV_RANK.high) return;
+  result.severity.raisedFrom = result.severity.level;
+  result.severity.level = 'high';
 }
 
 // ---- Ollama call ----
@@ -396,10 +490,16 @@ async function triage({ alertId, caseId } = {}) {
     return friendly('unavailable', e.ollamaStatus ? `Ollama returned an error (${e.message}).` :
       `Could not reach Ollama at ${settings.ollamaUrl}. Is it running?`);
   }
-  const result = parseReply(text, ruleMitreFor(hasAlert ? { alertId: id } : { caseId: id }));
-  if (result) result.nextSteps = guardNextSteps(result.nextSteps, ownHostNames(hasAlert ? { alertId: id } : { caseId: id }));
-  return result ? { status: 'ok', label: LABEL, model: settings.model, parsed: true, result }
-    : { status: 'ok', label: LABEL, model: settings.model, parsed: false, raw: clip(text, MAX_RAW_CHARS) };
+  const ref = hasAlert ? { alertId: id } : { caseId: id };
+  const result = parseReply(text, ruleMitreFor(ref));
+  const hits = intelHits(ref);
+  if (result) {
+    result.nextSteps = guardNextSteps(result.nextSteps, ownHostNames(ref));
+    raiseSeverity(result, hits);
+  }
+  const verified = verify(hits, result ? { summary: result.summary, severityReason: result.severity.justification, draftNote: result.draftNote } : { raw: text });
+  return result ? { status: 'ok', label: LABEL, model: settings.model, parsed: true, result, verified }
+    : { status: 'ok', label: LABEL, model: settings.model, parsed: false, raw: clip(text, MAX_RAW_CHARS), verified };
 }
 
-module.exports = { triage, availability, buildContext, buildMessages, parseReply, guardNextSteps, isJunkStep, isInternalIp, setFetch, REPLY_SCHEMA, ATTACK_TACTICS, LABEL, SETUP };
+module.exports = { triage, availability, buildContext, buildMessages, parseReply, stripFences, jsonSpan, stepKey, guardNextSteps, isJunkStep, findContradictions, CONTRADICTION_WARNING, isInternalIp, setFetch, REPLY_SCHEMA, ATTACK_TACTICS, LABEL, SETUP };

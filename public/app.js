@@ -125,20 +125,27 @@ const MITRE_NOTE = { confirms: "confirms the rule's mapping", refines: "refines 
 
 const TACTIC_NOTE = { 'detection rule': 'from detection rule', 'ATT&CK map': 'from ATT&amp;CK map', 'AI-suggested': 'AI-suggested' };
 
+// Facts the server checked against the simulator's own intel list: shown first and kept apart from the AI's answer
+function verifiedHtml(v) {
+  if (!v || !v.facts || !v.facts.length) return '';
+  return `<div class="note verified"><b>Verified facts</b> <span class="muted">&middot; checked against the intel list, not written by the AI</span>
+    <ul>${v.facts.map(f => `<li>${esc(f)}</li>`).join('')}</ul>${v.warning ? `<p class="warnline">&#9888; ${esc(v.warning)}</p>` : ''}</div>`;
+}
+
 function copilotResultHtml(r, key) {
   if (r.status !== 'ok') {
     return `<div class="note"><b>${esc(r.message)}</b><ol>${(r.setup || []).map(t => `<li>${esc(t)}</li>`).join('')}</ol></div>`;
   }
   if (!r.parsed) {
-    return `<div class="note"><b>${esc(r.label)}</b> <span class="muted">&middot; ${esc(r.model)}</span>
+    return `${verifiedHtml(r.verified)}<div class="note"><b>${esc(r.label)}</b> <span class="muted">&middot; ${esc(r.model)}</span>
       <p class="muted">The model did not answer in the expected format, so this is its raw reply:</p><pre>${esc(r.raw)}</pre></div>`;
   }
   const x = r.result;
-  return `<div class="note"><b>${esc(r.label)}</b> <span class="muted">&middot; ${esc(r.model)}</span>
+  return `${verifiedHtml(r.verified)}<div class="note"><b>${esc(r.label)}</b> <span class="muted">&middot; ${esc(r.model)}</span>
     <h3 class="muted">What happened</h3><p>${esc(x.summary)}</p>
     <h3 class="muted">MITRE ATT&amp;CK</h3>
     <p><span class="mono">${esc(x.mitre.techniqueId)}</span>${x.mitre.name ? ` ${esc(x.mitre.name)}` : ''} &middot; ${esc(x.mitre.tactic)}${TACTIC_NOTE[x.mitre.tacticSource] ? ` <span class="muted">(${TACTIC_NOTE[x.mitre.tacticSource]})</span>` : ''}${MITRE_NOTE[x.mitre.assessment] ? ` <span class="muted">&middot; ${MITRE_NOTE[x.mitre.assessment]}</span>` : ''}${x.mitre.source === 'detection rule' ? '<br><span class="muted">The model gave no valid MITRE answer, so this is the detection rule\'s own mapping.</span>' : ''}</p>
-    <h3 class="muted">Severity</h3><p><span class="sev ${x.severity.level}">${x.severity.level}</span> ${esc(x.severity.justification)}</p>
+    <h3 class="muted">Severity</h3><p><span class="sev ${x.severity.level}">${x.severity.level}</span>${x.severity.raisedFrom ? ` <span class="muted">(raised from ${esc(x.severity.raisedFrom)}: an indicator is on the intel list)</span>` : ''} ${esc(x.severity.justification)}</p>
     <h3 class="muted">Suggested next steps</h3><ol>${x.nextSteps.map(t => `<li>${esc(t)}</li>`).join('')}</ol>
     <h3 class="muted">Draft note <span class="muted">(edit it first; nothing is saved until you add it yourself)</span></h3>
     <textarea id="${key}Draft">${esc(x.draftNote)}</textarea>
