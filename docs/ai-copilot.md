@@ -5,7 +5,7 @@
 An optional helper for the analyst console. On any alert, and on any incident case, **Ask AI Copilot** gives you:
 
 1. A plain-English summary of what happened
-2. A MITRE ATT&CK mapping (tactic and technique ID), saying whether it confirms or refines the rule's mapping
+2. A MITRE ATT&CK mapping (tactic and technique ID), saying whether it confirms, refines or differs from the rule's mapping. The technique ID and tactic are checked; if either is not valid, the rule's own mapping is shown instead and marked "from detection rule"
 3. A severity assessment with a short justification
 4. 3-5 suggested next investigation steps, limited to what exists in the simulator: Log Search, IOC Lookup, related
    alerts, the alert's playbook and the case timeline

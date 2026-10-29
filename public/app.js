@@ -121,6 +121,8 @@ const copilotHtml = key => copilotLocked()
   ? '<p class="muted">AI Copilot is switched off during scored exercises.</p>'
   : `<div class="row"><button id="${key}" class="ghost">Ask AI Copilot</button><span class="muted">optional, runs on your PC</span></div><div id="${key}Out"></div>`;
 
+const MITRE_NOTE = { confirms: "confirms the rule's mapping", refines: "refines the rule's mapping", differs: "differs from the rule's mapping", rule: 'from detection rule' };
+
 function copilotResultHtml(r, key) {
   if (r.status !== 'ok') {
     return `<div class="note"><b>${esc(r.message)}</b><ol>${(r.setup || []).map(t => `<li>${esc(t)}</li>`).join('')}</ol></div>`;
@@ -133,7 +135,7 @@ function copilotResultHtml(r, key) {
   return `<div class="note"><b>${esc(r.label)}</b> <span class="muted">&middot; ${esc(r.model)}</span>
     <h3 class="muted">What happened</h3><p>${esc(x.summary)}</p>
     <h3 class="muted">MITRE ATT&amp;CK</h3>
-    <p><span class="mono">${esc(x.mitre.techniqueId)}</span> &middot; ${esc(x.mitre.tactic)} <span class="muted">(${x.mitre.assessment} the rule's mapping)</span><br>${esc(x.mitre.note)}</p>
+    <p><span class="mono">${esc(x.mitre.techniqueId)}</span>${x.mitre.name ? ` ${esc(x.mitre.name)}` : ''} &middot; ${esc(x.mitre.tactic)}${MITRE_NOTE[x.mitre.assessment] ? ` <span class="muted">(${MITRE_NOTE[x.mitre.assessment]})</span>` : ''}${x.mitre.source === 'detection rule' ? '<br><span class="muted">The model gave no valid MITRE answer, so this is the detection rule\'s own mapping.</span>' : ''}</p>
     <h3 class="muted">Severity</h3><p><span class="sev ${x.severity.level}">${x.severity.level}</span> ${esc(x.severity.justification)}</p>
     <h3 class="muted">Suggested next steps</h3><ol>${x.nextSteps.map(t => `<li>${esc(t)}</li>`).join('')}</ol>
     <h3 class="muted">Draft note <span class="muted">(edit it first; nothing is saved until you add it yourself)</span></h3>

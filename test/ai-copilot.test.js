@@ -17,13 +17,22 @@ const cases = require('../src/cases');
 const copilot = require('../src/ai/copilot');
 
 const defaults = { ...config.aiCopilot };
+// What the model sends back (the shape REPLY_SCHEMA asks for), and what parseReply turns it into
 const GOOD = {
   summary: 'Many failed logons for one account from an outside address, then a success.',
-  mitre: { tactic: 'Credential Access', techniqueId: 'T1110', assessment: 'confirms', note: 'Matches the rule.' },
-  severity: { level: 'high', justification: 'A success followed the failures.' },
+  mitre: { tactic: 'Credential Access', techniqueId: 'T1110', techniqueName: 'Brute Force' },
+  severity: 'high',
+  severityReason: 'A success followed the failures.',
   nextSteps: ['Open the events in Log Search', 'Look up the source IP in IOC Lookup', 'Check related alerts for the same user'],
   draftNote: 'Brute force against the account, followed by a successful logon. Needs containment review.',
 };
+const parsed = (assessment = 'none') => ({
+  summary: GOOD.summary,
+  mitre: { tactic: 'Credential Access', techniqueId: 'T1110', name: 'Brute Force', assessment, source: 'model' },
+  severity: { level: 'high', justification: GOOD.severityReason },
+  nextSteps: GOOD.nextSteps,
+  draftNote: GOOD.draftNote,
+});
 
 // A stand-in for Ollama's /api/chat. `calls` records every request so tests can inspect (or count) them.
 let calls;
@@ -113,7 +122,7 @@ test('enabled: parsed result for an alert, labelled, sent only to the configured
   assert.strictEqual(r.status, 'ok');
   assert.strictEqual(r.parsed, true);
   assert.strictEqual(r.label, copilot.LABEL);
-  assert.deepStrictEqual(r.result, GOOD);
+  assert.deepStrictEqual(r.result, parsed('confirms')); // the brute force rule is tagged T1110
   assert.strictEqual(calls.length, 1);
   const { url, opts, body } = calls[0];
   assert.strictEqual(url, 'http://127.0.0.1:11434/api/chat');
@@ -122,7 +131,7 @@ test('enabled: parsed result for an alert, labelled, sent only to the configured
   assert.ok(opts.signal instanceof AbortSignal);
   assert.strictEqual(body.model, 'llama3.2');
   assert.strictEqual(body.stream, false);
-  assert.strictEqual(body.format, 'json');
+  assert.deepStrictEqual(body.format, copilot.REPLY_SCHEMA);
 });
 
 test('the prompt is built server-side from the alert, its rule, indicators and events, and stays capped', async () => {
@@ -269,7 +278,8 @@ test('JSON that does not fit the shape falls back to raw text', () => {
   const bad = [
     {}, [], 'text', { ...GOOD, summary: '' }, { ...GOOD, draftNote: 5 }, { ...GOOD, mitre: null },
     { ...GOOD, mitre: { ...GOOD.mitre, techniqueId: 'banana' } }, { ...GOOD, mitre: { ...GOOD.mitre, tactic: '' } },
-    { ...GOOD, severity: { level: 'urgent', justification: 'x' } }, { ...GOOD, severity: { level: 'high' } },
+    { ...GOOD, severity: 'urgent' }, { ...GOOD, severityReason: '' }, { ...GOOD, severity: undefined },
+    { ...GOOD, severity: { level: 'urgent', justification: 'x' } }, { ...GOOD, severity: { level: 'high' }, severityReason: undefined },
     { ...GOOD, nextSteps: ['one', 'two'] }, { ...GOOD, nextSteps: 'do things' },
   ];
   for (const b of bad) assert.strictEqual(copilot.parseReply(JSON.stringify(b)), null, JSON.stringify(b).slice(0, 60));
@@ -281,16 +291,22 @@ test('JSON that does not fit the shape falls back to raw text', () => {
 
 test('replies wrapped in code fences or chatter are still parsed, and the result is normalised', () => {
   const fenced = '```json\n' + JSON.stringify(GOOD) + '\n```';
-  assert.deepStrictEqual(copilot.parseReply(fenced), GOOD);
-  assert.deepStrictEqual(copilot.parseReply('Sure! Here you go: ' + JSON.stringify(GOOD) + ' Hope it helps.'), GOOD);
-  const loose = { ...GOOD, mitre: { tactic: ' Credential Access ', techniqueId: 't1110.003', assessment: 'REFINES' },
-    severity: { level: 'HIGH', justification: ' ok ' }, nextSteps: [...GOOD.nextSteps, 'four', 'five', 'six', 7] };
+  assert.deepStrictEqual(copilot.parseReply(fenced), parsed());
+  assert.deepStrictEqual(copilot.parseReply('Sure! Here you go: ' + JSON.stringify(GOOD) + ' Hope it helps.'), parsed());
+  const loose = { ...GOOD, mitre: { tactic: ' credential access ', techniqueId: 't1110.003', techniqueName: ' Password Spraying ' },
+    severity: 'HIGH', severityReason: ' ok ', nextSteps: [...GOOD.nextSteps, 'four', 'five', 'six', 7] };
   const p = copilot.parseReply(JSON.stringify(loose));
   assert.strictEqual(p.mitre.techniqueId, 'T1110.003');
-  assert.strictEqual(p.mitre.assessment, 'refines');
+  assert.strictEqual(p.mitre.name, 'Password Spraying');
   assert.strictEqual(p.mitre.tactic, 'Credential Access');
   assert.strictEqual(p.severity.level, 'high');
+  assert.strictEqual(p.severity.justification, 'ok');
   assert.strictEqual(p.nextSteps.length, 5);
+});
+
+test('an older reply with a severity object is still accepted', () => {
+  const old = { ...GOOD, severity: { level: 'critical', justification: 'Old shape.' }, severityReason: undefined };
+  assert.deepStrictEqual(copilot.parseReply(JSON.stringify(old)).severity, { level: 'critical', justification: 'Old shape.' });
 });
 
 // ---- scored exercises ----
@@ -366,4 +382,120 @@ test('triage applies the guard: no IOC lookup for the alert\'s own host or inter
     'Look up 203.0.113.77 in IOC Lookup', 'Check related alerts', 'Open Log Search for the user'] })));
   const r = await copilot.triage({ alertId: id });
   assert.deepStrictEqual(r.result.nextSteps, ['Look up 203.0.113.77 in IOC Lookup', 'Check related alerts', 'Open Log Search for the user']);
+});
+
+// ---- structured outputs: the schema sent to Ollama ----
+
+test('the reply schema is sent as "format" with streaming off, and matches the shape we parse', async () => {
+  await copilot.triage({ alertId: alertId() });
+  const { body } = calls[0];
+  assert.strictEqual(body.stream, false);
+  const s = body.format;
+  assert.strictEqual(typeof s, 'object');
+  assert.deepStrictEqual(s, copilot.REPLY_SCHEMA);
+  assert.strictEqual(s.type, 'object');
+  assert.deepStrictEqual(s.required, ['summary', 'mitre', 'severity', 'severityReason', 'nextSteps', 'draftNote']);
+  assert.deepStrictEqual(Object.keys(s.properties), s.required);
+  assert.strictEqual(s.properties.summary.type, 'string');
+  assert.strictEqual(s.properties.severityReason.type, 'string');
+  assert.strictEqual(s.properties.draftNote.type, 'string');
+  assert.deepStrictEqual(s.properties.severity, { type: 'string', enum: ['low', 'medium', 'high', 'critical'] });
+  assert.deepStrictEqual(s.properties.nextSteps, { type: 'array', items: { type: 'string' }, minItems: 3, maxItems: 5 });
+  assert.deepStrictEqual(s.properties.mitre.required, ['tactic', 'techniqueId', 'techniqueName']);
+  assert.deepStrictEqual(Object.keys(s.properties.mitre.properties), ['tactic', 'techniqueId', 'techniqueName']);
+  // the model can only pick one of the 14 ATT&CK Enterprise tactics
+  assert.deepStrictEqual(s.properties.mitre.properties.tactic, { type: 'string', enum: copilot.ATTACK_TACTICS });
+  assert.deepStrictEqual(s.properties.mitre.properties.tactic.enum, ['Reconnaissance', 'Resource Development', 'Initial Access', 'Execution',
+    'Persistence', 'Privilege Escalation', 'Defense Evasion', 'Credential Access', 'Discovery', 'Lateral Movement', 'Collection',
+    'Command and Control', 'Exfiltration', 'Impact']);
+});
+
+test('a reply that follows the schema parses, so the schema and parseReply agree', () => {
+  const sample = { summary: 's', mitre: { tactic: 'Execution', techniqueId: 'T1059', techniqueName: 'x' }, severity: 'low',
+    severityReason: 'r', nextSteps: ['a', 'b', 'c'], draftNote: 'n' };
+  assert.deepStrictEqual(Object.keys(sample), copilot.REPLY_SCHEMA.required);
+  assert.ok(copilot.parseReply(JSON.stringify(sample)));
+});
+
+test('the prompt asks for the same keys and lists the 14 ATT&CK tactics', async () => {
+  await copilot.triage({ alertId: alertId() });
+  const system = calls[0].body.messages[0].content;
+  assert.strictEqual(copilot.ATTACK_TACTICS.length, 14);
+  for (const t of copilot.ATTACK_TACTICS) assert.ok(system.includes(t), t);
+  for (const k of ['techniqueName', 'severityReason', 'nextSteps', 'draftNote']) assert.ok(system.includes(k), k);
+  assert.ok(!system.includes('justification'));
+});
+
+// ---- MITRE validation and the fallback to the rule's own mapping ----
+
+const withMitre = mitre => JSON.stringify({ ...GOOD, mitre });
+const FROM_RULE_T1110 = { tactic: 'Credential Access', techniqueId: 'T1110', name: 'Brute Force', assessment: 'rule', source: 'detection rule' };
+
+test("a valid technique and tactic are kept, and judged against the rule's mapping", () => {
+  const m = (techniqueId, tactic = 'Credential Access') => copilot.parseReply(withMitre({ tactic, techniqueId, techniqueName: 'N' }), 'T1110').mitre;
+  assert.deepStrictEqual(m('T1110'), { tactic: 'Credential Access', techniqueId: 'T1110', name: 'N', assessment: 'confirms', source: 'model' });
+  assert.strictEqual(m('T1110.003').assessment, 'refines');    // a sub-technique of the rule's technique
+  assert.strictEqual(m('T1003').assessment, 'differs');        // a different technique
+  assert.strictEqual(m('t1003', ' impact ').tactic, 'Impact'); // case and spaces are normalised
+  assert.strictEqual(m(' t1003 ', ' impact ').source, 'model');
+  assert.strictEqual(copilot.parseReply(withMitre(GOOD.mitre)).mitre.assessment, 'none'); // no rule mapping to compare with
+});
+
+test('all 14 ATT&CK Enterprise tactics are accepted', () => {
+  for (const tactic of copilot.ATTACK_TACTICS)
+    assert.strictEqual(copilot.parseReply(withMitre({ tactic, techniqueId: 'T1110', techniqueName: 'x' }), 'T1110').mitre.source, 'model', tactic);
+});
+
+test('an invalid technique ID falls back to the rule\'s mapping, marked "detection rule"', () => {
+  for (const techniqueId of ['banana', 'T11', 'T1110.3', 'T1110.0034', '1110', '', 'T1110/T1003', 'TA0006', null, 1110, {}]) {
+    const p = copilot.parseReply(withMitre({ ...GOOD.mitre, techniqueId }), 'T1110');
+    assert.deepStrictEqual(p.mitre, FROM_RULE_T1110, String(techniqueId));
+  }
+});
+
+test("an invalid tactic falls back to the rule's mapping, and the model's technique is dropped with it", () => {
+  for (const tactic of ['T1110', 'Brute Force', 'OS Credential Dumping', 'Hacking', 'Command & Control', '', null, 7]) {
+    const p = copilot.parseReply(withMitre({ tactic, techniqueId: 'T1003', techniqueName: 'OS Credential Dumping' }), 'T1110');
+    assert.deepStrictEqual(p.mitre, FROM_RULE_T1110, String(tactic));
+  }
+});
+
+test("the fallback uses the rule's own technique name and first tactic", () => {
+  const bad = { tactic: 'nope', techniqueId: 'nope', techniqueName: 'x' };
+  assert.deepStrictEqual(copilot.parseReply(withMitre(bad), 'T1071.004').mitre,
+    { tactic: 'Command and Control', techniqueId: 'T1071.004', name: 'Application Layer Protocol: DNS', assessment: 'rule', source: 'detection rule' });
+  assert.deepStrictEqual(copilot.parseReply(withMitre(bad), ['t1078', 'T1110']).mitre,
+    { tactic: 'Initial Access', techniqueId: 'T1078', name: 'Valid Accounts', assessment: 'rule', source: 'detection rule' });
+});
+
+test('an invalid mapping with no usable rule mapping to fall back to is not parsed', () => {
+  const bad = { tactic: 'nope', techniqueId: 'nope', techniqueName: 'x' };
+  for (const rule of [undefined, null, '', [], 'T9999', 'banana']) assert.strictEqual(copilot.parseReply(withMitre(bad), rule), null, String(rule));
+});
+
+test("triage: a bad MITRE answer is replaced by the alert's own mapping and marked", async () => {
+  use(reply(withMitre({ tactic: 'T1110', techniqueId: 'banana', techniqueName: 'Brute Force' })));
+  const r = await copilot.triage({ alertId: alertId() });
+  assert.strictEqual(r.parsed, true);
+  assert.deepStrictEqual(r.result.mitre, FROM_RULE_T1110);
+  assert.strictEqual(r.result.severity.level, 'high'); // the rest of the reply is untouched
+  assert.deepStrictEqual(r.result.nextSteps, GOOD.nextSteps);
+});
+
+test("triage: a good MITRE answer is kept and marked as the model's", async () => {
+  const r = await copilot.triage({ alertId: alertId() });
+  assert.strictEqual(r.result.mitre.source, 'model');
+  assert.strictEqual(r.result.mitre.assessment, 'confirms');
+});
+
+test("triage for a case falls back to the mapping of the case's most severe alert", async () => {
+  const low = alertId();
+  gen.expand('cred_dump', Date.now()).forEach(engine.ingest);
+  const critical = store.state.alerts.find(a => a.ruleId === 'R007');
+  assert.ok(critical);
+  const c = cases.create({ alertIds: [low, critical.id] });
+  use(reply(withMitre({ tactic: 'nope', techniqueId: 'nope', techniqueName: 'x' })));
+  const r = await copilot.triage({ caseId: c.id });
+  assert.deepStrictEqual(r.result.mitre,
+    { tactic: 'Credential Access', techniqueId: 'T1003', name: 'OS Credential Dumping', assessment: 'rule', source: 'detection rule' });
 });
