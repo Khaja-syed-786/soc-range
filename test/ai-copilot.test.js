@@ -310,3 +310,57 @@ test('the lockout applies even while the copilot is disabled, and allowInExercis
   config.aiCopilot.enabled = true;
   assert.strictEqual((await copilot.triage({ alertId: id })).status, 'ok');
 });
+
+// ---- guard: no IOC lookups for internal addresses or the alert's own host ----
+
+test('isInternalIp: private, loopback, link-local, 0.x and the company network are internal; the internet ranges are not', () => {
+  for (const ip of ['10.0.0.1', '172.16.0.1', '172.31.255.254', '192.168.1.1', '127.0.0.1', '169.254.10.10', '0.0.0.0', '192.0.2.127'])
+    assert.strictEqual(copilot.isInternalIp(ip), true, ip);
+  for (const ip of ['203.0.113.77', '198.51.100.20', '8.8.8.8', '172.15.0.1', '172.32.0.1', '192.0.3.1', '300.1.1.1', 'not an ip', '1.2.3'])
+    assert.strictEqual(copilot.isInternalIp(ip), false, ip);
+});
+
+test('guard: drops an IOC lookup that only names internal addresses', () => {
+  const steps = ['Log Search: failed logons for the user', 'IOC Lookup: check if 192.0.2.127 is on any threat intelligence list',
+    'Run an IOC lookup on 10.1.2.3 and 192.168.0.9', 'Review the related alerts'];
+  assert.deepStrictEqual(copilot.guardNextSteps(steps), ['Log Search: failed logons for the user', 'Review the related alerts',
+    'Log Search: other events for the same host and user around the time of the alert']);
+});
+
+test('guard: keeps external lookups, steps that name no address, and non-IOC steps that mention internal addresses', () => {
+  const steps = ['IOC Lookup: 203.0.113.77', 'Look up the source IP in IOC Lookup', 'Log Search: everything from 192.0.2.127',
+    'Check 198.51.100.20 against the threat intel list'];
+  assert.deepStrictEqual(copilot.guardNextSteps(steps), steps);
+});
+
+test('guard: a step that mixes internal and external indicators is rewritten to the external ones', () => {
+  const hash = '0'.repeat(48) + 'fa4e000000000001';
+  const steps = ['IOC Lookup: 192.0.2.124 and 203.0.113.229', `Check ${hash} and trade-show-updates.example in threat intel from 192.0.2.119`,
+    'Review the related alerts', 'Open the playbook'];
+  assert.deepStrictEqual(copilot.guardNextSteps(steps), ['IOC Lookup: 203.0.113.229', `IOC Lookup: trade-show-updates.example, ${hash}`,
+    'Review the related alerts', 'Open the playbook']);
+});
+
+test('guard: an IOC lookup for the alert\'s own host or localhost is removed, but another host is fine', () => {
+  const hosts = new Set(['ws-024']);
+  const steps = ['IOC Lookup: WS-024', 'Threat intel check for ws-024.', 'IOC lookup for localhost', 'IOC Lookup: WS-0245 history', 'Open Log Search',
+    'Check related alerts'];
+  assert.deepStrictEqual(copilot.guardNextSteps(steps, hosts), ['IOC Lookup: WS-0245 history', 'Open Log Search', 'Check related alerts']);
+});
+
+test('guard: always leaves 3 to 5 steps', () => {
+  assert.strictEqual(copilot.guardNextSteps(['IOC Lookup: 192.0.2.1', 'IOC Lookup: 10.0.0.1', 'IOC Lookup: 127.0.0.1']).length, 3);
+  assert.strictEqual(copilot.guardNextSteps(Array.from({ length: 5 }, (_, i) => `Step ${i}`)).length, 5);
+  assert.strictEqual(copilot.guardNextSteps(Array.from({ length: 8 }, (_, i) => `Step ${i}`)).length, 5);
+});
+
+test('triage applies the guard: no IOC lookup for the alert\'s own host or internal addresses', async () => {
+  const id = alertId();
+  const a = store.state.alerts.find(x => x.id === id);
+  const host = store.state.events.find(e => a.relatedEventIds.includes(e.id)).host;
+  assert.ok(host);
+  use(reply(JSON.stringify({ ...GOOD, nextSteps: [`IOC Lookup: ${host}`, 'Check if 192.0.2.127 is on any threat intelligence list',
+    'Look up 203.0.113.77 in IOC Lookup', 'Check related alerts', 'Open Log Search for the user'] })));
+  const r = await copilot.triage({ alertId: id });
+  assert.deepStrictEqual(r.result.nextSteps, ['Look up 203.0.113.77 in IOC Lookup', 'Check related alerts', 'Open Log Search for the user']);
+});

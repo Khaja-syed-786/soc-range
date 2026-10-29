@@ -7,6 +7,7 @@ const store = require('../store');
 const detection = require('../detection');
 const mitre = require('../mitre');
 const ioc = require('../ioc');
+const company = require('../company');
 const exercise = require('../exercise');
 const { SEV_RANK } = require('../alerts');
 
@@ -188,6 +189,63 @@ function parseReply(text) {
   };
 }
 
+// ---- guard: never suggest an IOC lookup for our own machines ----
+// Small models keep suggesting threat-intel lookups for a workstation's own address. The prompt asks them not to; this
+// enforces it after the fact. Internal means private (RFC1918), loopback, link-local, 0.x, and the simulator's company
+// network 192.0.2.0/24 (company.js). 198.51.100.x and 203.0.113.x are the simulator's internet ranges (benign and
+// suspicious), so they are external and stay.
+
+const IPV4 = /\b(?:\d{1,3}\.){3}\d{1,3}\b/g;
+const IOC_STEP = /\b(?:ioc|threat[- ]?intel(?:ligence)?|intel (?:list|feed)|reputation)\b/i;
+const LOCAL_WORD = /\blocalhost\b|::1/i;
+const SIM_DOMAIN = /\b(?:[a-z0-9-]+\.)+example\b/gi;
+const HASH = /\b[0-9a-f]{64}\b/gi;
+const FALLBACK_STEPS = [
+  'Log Search: other events for the same host and user around the time of the alert',
+  'Related Alerts: review the other alerts on the same entity',
+  'Playbook: work through the steps on the alert',
+];
+
+function isInternalIp(ip) {
+  const p = String(ip).split('.').map(Number);
+  if (p.length !== 4 || p.some(n => !Number.isInteger(n) || n < 0 || n > 255)) return false;
+  const [a, b, c] = p;
+  return a === 0 || a === 10 || a === 127 || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) ||
+    (a === 169 && b === 254) || (a === 192 && b === 0 && c === 2);
+}
+
+// Lower-case names of the machines this alert (or case) is about
+function ownHostNames({ alertId, caseId }) {
+  const alerts = alertId !== undefined ? store.state.alerts.filter(a => a.id === alertId)
+    : (store.state.cases.find(c => c.id === caseId)?.alertIds || []).map(i => store.state.alerts.find(a => a.id === i)).filter(Boolean);
+  const known = new Set(company.hosts.map(h => h.name.toLowerCase()));
+  const names = new Set();
+  const ids = new Set();
+  for (const a of alerts) {
+    if (known.has(String(a.key).toLowerCase())) names.add(String(a.key).toLowerCase());
+    a.relatedEventIds.forEach(i => ids.add(i));
+  }
+  for (const e of store.state.events) if (ids.has(e.id) && e.host) names.add(String(e.host).toLowerCase());
+  return names;
+}
+
+// Drop an IOC-lookup step that only points at an internal address or the alert's own host; when it also names external
+// indicators, rewrite it to name just those. Other steps pass through untouched. Always returns 3 to 5 steps.
+function guardNextSteps(steps, hostNames = new Set()) {
+  const out = [];
+  for (const step of steps) {
+    if (!IOC_STEP.test(step)) { out.push(step); continue; }
+    const ips = step.match(IPV4) || [];
+    const internalIps = ips.filter(isInternalIp);
+    const hosts = [...hostNames].filter(h => new RegExp(`(?<![\\w-])${h.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![\\w-])`, 'i').test(step));
+    if (!internalIps.length && !hosts.length && !LOCAL_WORD.test(step)) { out.push(step); continue; }
+    const external = [...new Set([...ips.filter(ip => !isInternalIp(ip)), ...(step.match(SIM_DOMAIN) || []), ...(step.match(HASH) || [])])];
+    if (external.length) out.push(`IOC Lookup: ${external.join(', ')}`);
+  }
+  for (const f of FALLBACK_STEPS) if (out.length < 3) out.push(f);
+  return out.slice(0, 5);
+}
+
 // ---- Ollama call ----
 
 async function callOllama(messages, { ollamaUrl, model, timeoutMs }) {
@@ -238,8 +296,9 @@ async function triage({ alertId, caseId } = {}) {
       `Could not reach Ollama at ${settings.ollamaUrl}. Is it running?`);
   }
   const result = parseReply(text);
+  if (result) result.nextSteps = guardNextSteps(result.nextSteps, ownHostNames(hasAlert ? { alertId: id } : { caseId: id }));
   return result ? { status: 'ok', label: LABEL, model: settings.model, parsed: true, result }
     : { status: 'ok', label: LABEL, model: settings.model, parsed: false, raw: clip(text, MAX_RAW_CHARS) };
 }
 
-module.exports = { triage, availability, buildContext, buildMessages, parseReply, setFetch, LABEL, SETUP };
+module.exports = { triage, availability, buildContext, buildMessages, parseReply, guardNextSteps, isInternalIp, setFetch, LABEL, SETUP };
