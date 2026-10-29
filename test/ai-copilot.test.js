@@ -238,8 +238,11 @@ test('an Ollama error status is reported as unavailable', async () => {
 
 test('a timeout is reported', async () => {
   config.aiCopilot.timeoutMs = 25;
+  // AbortSignal.timeout() does not keep the event loop alive, and on Node 22 nothing else does here, so hold it open.
+  const keepAlive = setTimeout(() => {}, 5000);
   use((url, opts) => new Promise((resolve, reject) => opts.signal.addEventListener('abort', () => reject(opts.signal.reason))));
-  const r = await copilot.triage({ alertId: alertId() });
+  let r;
+  try { r = await copilot.triage({ alertId: alertId() }); } finally { clearTimeout(keepAlive); }
   assert.strictEqual(r.status, 'timeout');
   assert.match(r.message, /did not answer within/);
   assert.match(r.message, /timeoutMs/);
